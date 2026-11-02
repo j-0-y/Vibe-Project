@@ -10,7 +10,7 @@ import React, {
 import { getSupabase, resetSupabaseClient } from "@/lib/supabase";
 import { uid } from "@/lib/utils";
 import { getInitialSeedData } from "@/lib/seed";
-import type { Order, Product, ShopData } from "@/lib/types";
+import type { ShopData } from "@/lib/types";
 import { useAuth } from "./useAuth";
 import type { RealtimeChannel } from "@supabase/supabase-js";
 
@@ -71,6 +71,7 @@ export function ShopProvider({ children }: { children: React.ReactNode }) {
   const [unread, setUnread] = useState(0);
 
   const lastPush = useRef(0);
+  const lastPulledAt = useRef(0);
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const dbRef = useRef(db);
   dbRef.current = db;
@@ -119,7 +120,7 @@ export function ShopProvider({ children }: { children: React.ReactNode }) {
         console.warn("Server sync error:", err);
       }
 
-      // 2. Sync to Supabase if configured
+      // 2. Sync to Supabase cloud
       const sb = getSupabase();
       if (sb) {
         try {
@@ -132,6 +133,8 @@ export function ShopProvider({ children }: { children: React.ReactNode }) {
             setCloudMsg("☁️ সুপাবেস ক্লাউডে সিঙ্ক হয়েছে ✅");
             setIsCloudSynced(true);
             return;
+          } else {
+            console.warn("Supabase upsert returned error:", res.error);
           }
         } catch (sbErr) {
           console.warn("Supabase push error:", sbErr);
@@ -159,7 +162,7 @@ export function ShopProvider({ children }: { children: React.ReactNode }) {
       if (timer.current) clearTimeout(timer.current);
       timer.current = setTimeout(() => {
         void pushNow();
-      }, 1000);
+      }, 800);
     },
     [pushNow]
   );
@@ -191,7 +194,6 @@ export function ShopProvider({ children }: { children: React.ReactNode }) {
         if (cfgRes.ok) {
           const cfg = await cfgRes.json();
           if (cfg && (cfg.supabase?.url || cfg.steadfast?.key || cfg.bdCourierKey)) {
-            // Merge into local storage so Supabase and Steadfast work on this device
             try {
               if (cfg.steadfast) {
                 localStorage.setItem("steadfast_creds", JSON.stringify(cfg.steadfast));
@@ -221,14 +223,43 @@ export function ShopProvider({ children }: { children: React.ReactNode }) {
       let loadedFromSupabase = false;
       if (sb) {
         try {
-          const res = await sb.from("shops").select("data, updated_at").eq("id", shopId).maybeSingle();
+          const res = await sb
+            .from("shops")
+            .select("data, updated_at")
+            .eq("id", shopId)
+            .maybeSingle();
+
           if (!res.error && res.data && res.data.data) {
-            const normalized = normalize(res.data.data);
-            setDb(normalized);
-            persistLocal(normalized);
-            setCloudMsg("☁️ সুপাবেস থেকে ডাটা লোড হয়েছে");
-            setIsCloudSynced(true);
-            loadedFromSupabase = true;
+            const remoteUpdatedAt = Number(res.data.updated_at || 0);
+            // Only update if remote is newer or we haven't pulled yet
+            if (remoteUpdatedAt >= lastPulledAt.current) {
+              lastPulledAt.current = remoteUpdatedAt;
+              const normalized = normalize(res.data.data);
+              setDb(normalized);
+              persistLocal(normalized);
+
+              // Auto-extract Steadfast & BD Courier credentials across devices
+              if (normalized.settings?.steadfast?.key) {
+                try {
+                  localStorage.setItem(
+                    "steadfast_creds",
+                    JSON.stringify(normalized.settings.steadfast)
+                  );
+                } catch {}
+              }
+              if (normalized.settings?.bdCourierKey) {
+                try {
+                  localStorage.setItem(
+                    "bd_courier_api_key",
+                    normalized.settings.bdCourierKey
+                  );
+                } catch {}
+              }
+
+              setCloudMsg("☁️ সুপাবেস থেকে ডাটা সিঙ্ক হয়েছে");
+              setIsCloudSynced(true);
+              loadedFromSupabase = true;
+            }
           }
         } catch (sbErr) {
           console.warn("Supabase pull error:", sbErr);
@@ -284,36 +315,66 @@ export function ShopProvider({ children }: { children: React.ReactNode }) {
     setUnread(0);
   }, []);
 
-  // Initial pull and realtime connection
+  // Initial pull and realtime connection + active polling across devices
   useEffect(() => {
     void pullNow();
 
+    // 1. Supabase Realtime WebSocket subscription
     const sb = getSupabase();
-    if (!sb || !shopId) return;
-
     let ch: RealtimeChannel | null = null;
-    try {
-      ch = sb
-        .channel(`shop_${shopId}`)
-        .on(
-          "postgres_changes",
-          { event: "UPDATE", schema: "public", table: "shops", filter: `id=eq.${shopId}` },
-          (payload) => {
-            if (Date.now() - lastPush.current < 2000) return;
-            const newData = (payload.new as any)?.data;
-            if (newData) {
-              const normalized = normalize(newData);
-              setDb(normalized);
-              persistLocal(normalized);
-              setCloudMsg("⚡ ক্লাউড থেকে ইনস্ট্যান্ট আপডেট এলো");
+    if (sb && shopId) {
+      try {
+        ch = sb
+          .channel(`shop_${shopId}`)
+          .on(
+            "postgres_changes",
+            { event: "*", schema: "public", table: "shops" },
+            (payload) => {
+              const newShopId = (payload.new as any)?.id;
+              if (newShopId && newShopId !== shopId) return;
+
+              // Don't overwrite if we just pushed in the last 1.5 seconds
+              if (Date.now() - lastPush.current < 1500) return;
+
+              const newData = (payload.new as any)?.data;
+              if (newData) {
+                const normalized = normalize(newData);
+                setDb(normalized);
+                persistLocal(normalized);
+                setCloudMsg("⚡ ক্লাউড থেকে ইনস্ট্যান্ট আপডেট এলো");
+              }
             }
-          }
-        )
-        .subscribe();
-    } catch {}
+          )
+          .subscribe();
+      } catch {}
+    }
+
+    // 2. Window Focus & Visibility Listener (Syncs when you switch back to Laptop/Phone tab)
+    const onFocus = () => {
+      if (Date.now() - lastPush.current > 2000) {
+        void pullNow();
+      }
+    };
+    window.addEventListener("focus", onFocus);
+    const onVisChange = () => {
+      if (document.visibilityState === "visible" && Date.now() - lastPush.current > 2000) {
+        void pullNow();
+      }
+    };
+    document.addEventListener("visibilitychange", onVisChange);
+
+    // 3. Active Background Polling every 4 seconds (Guarantees multi-device sync without reload)
+    const pollTimer = setInterval(() => {
+      if (Date.now() - lastPush.current > 3000) {
+        void pullNow();
+      }
+    }, 4000);
 
     return () => {
-      if (ch) {
+      clearInterval(pollTimer);
+      window.removeEventListener("focus", onFocus);
+      document.removeEventListener("visibilitychange", onVisChange);
+      if (ch && sb) {
         try {
           void sb.removeChannel(ch);
         } catch {}

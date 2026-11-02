@@ -2,6 +2,10 @@ import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 
 let client: SupabaseClient | null | undefined;
 
+export const PERMANENT_SUPABASE_URL = "https://pjmetesiswnoahwpknlg.supabase.co";
+export const PERMANENT_SUPABASE_KEY =
+  "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InBqbWV0ZXNpc3dub2Fod3BrbmxnIiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTM2MDA3OTgsImV4cCI6MjEwOTE3Njc5OH0.PwKAWoifw8rnSWlCC5FhDSnOar6uyzr71_kHxl__t4w";
+
 export function getSupabaseCredentials(): { url: string; key: string } {
   // 1. Env vars (supports both VITE_ and NEXT_PUBLIC_ prefixes)
   const env = (import.meta as unknown as { env?: Record<string, string> }).env || {};
@@ -9,7 +13,7 @@ export function getSupabaseCredentials(): { url: string; key: string } {
   const envKey = env.VITE_SUPABASE_ANON_KEY || env.NEXT_PUBLIC_SUPABASE_ANON_KEY || "";
   if (envUrl && envKey) return { url: envUrl, key: envKey };
 
-  // 2. Settings saved in localStorage
+  // 2. Settings saved in localStorage (if overridden)
   try {
     const raw = localStorage.getItem("bag_shop_v1");
     if (raw) {
@@ -23,7 +27,11 @@ export function getSupabaseCredentials(): { url: string; key: string } {
     }
   } catch {}
 
-  return { url: "", key: "" };
+  // 3. Permanent project credentials
+  return {
+    url: PERMANENT_SUPABASE_URL,
+    key: PERMANENT_SUPABASE_KEY,
+  };
 }
 
 export function isSupabaseConfigured(): boolean {
@@ -101,36 +109,19 @@ create table if not exists public.shop_events (
   created_at timestamp with time zone default timezone('utc'::text, now()) not null
 );
 
--- 4. Enable Row Level Security (RLS)
-alter table public.profiles enable row level security;
-alter table public.shops enable row level security;
-alter table public.shop_events enable row level security;
+-- 4. Clean Permissions (No recursion, allows anon sync)
+drop policy if exists "Allow users to view own profile or same shop members" on public.profiles;
+drop policy if exists "Allow users to update own profile" on public.profiles;
+drop policy if exists "Allow members to read their shop" on public.shops;
+drop policy if exists "Allow members to update their shop" on public.shops;
+drop policy if exists "Allow owner to insert shop" on public.shops;
+drop policy if exists "Allow read and write for shops" on public.shops;
+drop policy if exists "Allow members to read shop events" on public.shop_events;
+drop policy if exists "Allow service_role or team to manage events" on public.shop_events;
 
--- 5. RLS Policies (profiles)
-create policy "Allow users to view own profile or same shop members"
-  on public.profiles for select
-  using (auth.uid() = id or shop_id in (select shop_id from public.profiles where id = auth.uid()));
-
-create policy "Allow users to update own profile"
-  on public.profiles for update
-  using (auth.uid() = id);
-
--- 6. RLS Policies (shops)
-create policy "Allow read and write for shops"
-  on public.shops for all
-  using (true)
-  with check (true);
-
--- 7. RLS Policies (shop_events)
-create policy "Allow members to read shop events"
-  on public.shop_events for select
-  using (
-    shop_id in (select shop_id from public.profiles where id = auth.uid())
-  );
-
-create policy "Allow service_role or team to manage events"
-  on public.shop_events for all
-  using (true);
+alter table public.profiles disable row level security;
+alter table public.shops disable row level security;
+alter table public.shop_events disable row level security;
 
 -- 8. Enable Realtime Replication
 begin;
