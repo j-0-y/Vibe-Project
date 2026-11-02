@@ -140,6 +140,7 @@ export interface Settings {
     url: string;
     anonKey: string;
   };
+  bdCourierKey?: string;
   mockSteadfast?: boolean;
 }
 

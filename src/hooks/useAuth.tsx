@@ -127,14 +127,24 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     } catch {}
   };
 
+  const THIRTY_DAYS_MS = 30 * 24 * 60 * 60 * 1000;
+
   useEffect(() => {
-    // 1. Check stored active session
+    // 1. Check stored active session (minimum 30 days persistence)
     let authenticated = false;
     try {
       const stored = localStorage.getItem(AUTH_KEY);
       if (stored) {
         const parsed = JSON.parse(stored);
-        if (parsed?.userId && parsed?.email) {
+        const now = Date.now();
+        if (parsed?.expiresAt && now > parsed.expiresAt) {
+          localStorage.removeItem(AUTH_KEY);
+        } else if (parsed?.userId && parsed?.email) {
+          // Auto-extend rolling session for 30 more days
+          parsed.expiresAt = now + THIRTY_DAYS_MS;
+          try {
+            localStorage.setItem(AUTH_KEY, JSON.stringify(parsed));
+          } catch {}
           setUserEmail(parsed.email);
           setUserId(parsed.userId);
           setRoleState(parsed.role || "owner");
@@ -191,6 +201,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
             userId: user.id,
             role: myRole,
             shopId: sId,
+            expiresAt: Date.now() + THIRTY_DAYS_MS,
           };
           localStorage.setItem(AUTH_KEY, JSON.stringify(session));
 
@@ -242,6 +253,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       userId: selectedUser.id,
       role: selectedUser.role,
       shopId: sId,
+      expiresAt: Date.now() + THIRTY_DAYS_MS,
     };
     try {
       localStorage.setItem(AUTH_KEY, JSON.stringify(session));

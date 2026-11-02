@@ -35,6 +35,12 @@ export default function SetupTab() {
   const [sbUrl, setSbUrl] = useState(db.settings?.supabase?.url || "");
   const [sbAnonKey, setSbAnonKey] = useState(db.settings?.supabase?.anonKey || "");
   const [copiedSql, setCopiedSql] = useState(false);
+
+  // BD Courier API Key
+  const [bdKey, setBdKey] = useState(db.settings?.bdCourierKey || "");
+  const [testingBd, setTestingBd] = useState(false);
+  const [bdTestMsg, setBdTestMsg] = useState<string | null>(null);
+
   const [isSaving, setIsSaving] = useState(false);
 
   // Sync state whenever db.settings updates (e.g. from cloud or reload)
@@ -58,15 +64,18 @@ export default function SetupTab() {
       if (db.settings.steadfast?.secret) setSfSecret(db.settings.steadfast.secret);
       if (db.settings.supabase?.url) setSbUrl(db.settings.supabase.url);
       if (db.settings.supabase?.anonKey) setSbAnonKey(db.settings.supabase.anonKey);
+      if (db.settings.bdCourierKey) setBdKey(db.settings.bdCourierKey);
     }
   }, [db.settings]);
 
-  // Load stored steadfast creds if present
+  // Load stored steadfast and bd courier creds if present
   useEffect(() => {
     try {
       const l = JSON.parse(localStorage.getItem("steadfast_creds") || "{}");
       if (l.key && !sfKey) setSfKey(l.key);
       if (l.secret && !sfSecret) setSfSecret(l.secret);
+      const b = localStorage.getItem("bd_courier_api_key");
+      if (b && !bdKey) setBdKey(b);
     } catch {}
   }, []);
 
@@ -80,6 +89,7 @@ export default function SetupTab() {
 
     try {
       localStorage.setItem("steadfast_creds", JSON.stringify(steadfast));
+      localStorage.setItem("bd_courier_api_key", bdKey.trim());
     } catch {}
 
     const supabase = {
@@ -95,6 +105,7 @@ export default function SetupTab() {
       d.settings.fxRate = +fxRate || 130;
       d.settings.steadfast = steadfast;
       d.settings.supabase = supabase;
+      d.settings.bdCourierKey = bdKey.trim();
       d.settings.ship = {
         inside: { cost: +insideCost || 80, fee: +insideFee || 80 },
         sub: { cost: +subCost || 100, fee: +subFee || 100 },
@@ -104,8 +115,37 @@ export default function SetupTab() {
 
     resetSupabaseClient();
     setIsSaving(false);
-    notify("সেটিংস সংরক্ষিত!", `দোকানের নাম "${cleanName}" ও ডেলিভারি চার্জ সফলভাবে আপডেট হয়েছে।`);
+    notify("সেটিংস সংরক্ষিত!", `দোকানের নাম "${cleanName}", ডেলিভারি চার্জ ও BD Courier API সংরক্ষিত হয়েছে।`);
     alert("✅ সমস্ত সেটিংস সফলভাবে সংরক্ষিত হয়েছে!");
+  };
+
+  const testBdCourier = async () => {
+    if (!bdKey.trim()) {
+      alert("আগে BD Courier API Key ইনপুট ফিল্ডে পেস্ট করুন");
+      return;
+    }
+    setTestingBd(true);
+    setBdTestMsg(null);
+    try {
+      const res = await fetch("/api/bdcourier/check", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "x-bdcourier-key": bdKey.trim(),
+        },
+        body: JSON.stringify({ phone: "01711000000", apiKey: bdKey.trim() }),
+      });
+      const d = await res.json();
+      if (d.configured && !d.warning) {
+        setBdTestMsg("✅ BD Courier API সংযোগ সফল হয়েছে!");
+      } else {
+        setBdTestMsg(d.warning || d.message || "API Key সক্রিয় আছে!");
+      }
+    } catch {
+      setBdTestMsg("সার্ভারের সাথে সংযোগ করা সম্ভব হয়নি");
+    } finally {
+      setTestingBd(false);
+    }
   };
 
   const checkSteadfastBalance = async () => {
@@ -327,6 +367,43 @@ export default function SetupTab() {
             />
           </Field>
         </div>
+      </Card>
+
+      {/* BD Courier Fraud Check Settings */}
+      <Card>
+        <div className="flex items-center justify-between mb-2">
+          <h3 className="font-bold text-stone-900 text-sm flex items-center gap-1.5">
+            🛡️ বিডি কুরিয়ার ফ্রড চেক সংযোগ (BD Courier API)
+          </h3>
+          <Btn
+            small
+            color="green"
+            onClick={testBdCourier}
+            disabled={testingBd}
+          >
+            {testingBd ? "টেস্ট হচ্ছে..." : "🔍 API টেস্ট করুন"}
+          </Btn>
+        </div>
+
+        <p className="text-xs text-stone-500 mb-2.5">
+          পার্সেল বুক করার আগেই কাস্টমারের আগের ডেলিভারি সাকসেস ও রিটার্ন রেকর্ড বিডি কুরিয়ার লাইভ ডাটাবেস থেকে চেক করতে আপনার API Key এখানে দিন:
+        </p>
+
+        {bdTestMsg && (
+          <div className="mb-3 bg-amber-50 border border-amber-300 p-2.5 rounded-xl text-center text-xs font-bold text-stone-800">
+            {bdTestMsg}
+          </div>
+        )}
+
+        <Field label="BD Courier API Key" hint="bdcourier.com থেকে পাওয়া আপনার API Key পেস্ট করুন">
+          <input
+            type="password"
+            className={inputCls}
+            value={bdKey}
+            onChange={(e) => setBdKey(e.target.value)}
+            placeholder="যেমন: bdc_live_xxxxxxxxxxxxxxxxxxxxxxxx"
+          />
+        </Field>
       </Card>
 
       {/* Supabase Integration Configuration */}

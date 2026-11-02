@@ -187,51 +187,77 @@ export async function returnParcel(cid: string): Promise<boolean> {
   return Boolean(j && (j.status === 200 || j.status === "success"));
 }
 
+function getStoredBdCourierKey(): string {
+  try {
+    const key = localStorage.getItem("bd_courier_api_key");
+    if (key) return key.trim();
+    const dbRaw = localStorage.getItem("bag_shop_v1");
+    if (dbRaw) {
+      const db = JSON.parse(dbRaw);
+      if (db?.settings?.bdCourierKey) return String(db.settings.bdCourierKey).trim();
+    }
+  } catch {}
+  return "";
+}
+
 /**
- * Fraud check lookup (BD Courier / Aggregator)
+ * Fraud check lookup (BD Courier Live API)
  */
 export async function fraudCheck(phone: string): Promise<FraudReport | null> {
-  // If phone provided, return comprehensive safety assessment
   const digits = phone.replace(/\D/g, "");
   if (digits.length < 11) return null;
 
-  // Real or simulated courier report
-  const isSuspicious = digits.endsWith("00") || digits.endsWith("99");
-  const total = isSuspicious ? 14 : 22;
-  const delivered = isSuspicious ? 6 : 21;
-  const cancelled = total - delivered;
-  const rate = Math.round((delivered / total) * 100);
+  const key = getStoredBdCourierKey();
 
-  const couriers: FraudCourier[] = [
-    { name: "Steadfast", orders: Math.round(total * 0.6), delivered: Math.round(delivered * 0.6), cancelled: Math.round(cancelled * 0.6), rate },
-    { name: "Pathao", orders: Math.round(total * 0.25), delivered: Math.round(delivered * 0.25), cancelled: Math.round(cancelled * 0.25), rate },
-    { name: "RedX", orders: Math.round(total * 0.15), delivered: Math.round(delivered * 0.15), cancelled: Math.round(cancelled * 0.15), rate },
-  ];
+  try {
+    const headers: Record<string, string> = {
+      "Content-Type": "application/json",
+    };
+    if (key) headers["x-bdcourier-key"] = key;
 
-  return {
-    total,
-    delivered,
-    cancelled,
-    rate,
-    couriers,
-    reports: isSuspicious
-      ? [{ title: "রিটার্ন প্রবণতা বেশি", detail: "গত ৩ মাসে একাধিক পার্সেল রিসিভ করেননি" }]
-      : [],
-    risk_verdict: isSuspicious
-      ? {
-          level: "medium",
-          label: "সতর্কতা প্রয়োজন ⚠️",
-          action: "অগ্রিম ডেলিভারি চার্জ নিয়ে কনফার্ম করুন",
-          color: "#eab308",
-          reasons: ["ডেলিভারি সাকসেস রেট ৬০% এর নিচে"],
-        }
-      : {
+    const res = await fetch("/api/bdcourier/check", {
+      method: "POST",
+      headers,
+      body: JSON.stringify({ phone: digits, apiKey: key }),
+    });
+
+    if (res.ok) {
+      const data = await res.json();
+      return {
+        total: data.total || 0,
+        delivered: data.delivered || 0,
+        cancelled: data.cancelled || 0,
+        rate: data.rate || 0,
+        couriers: data.couriers || [],
+        reports: data.reports || [],
+        risk_verdict: data.risk_verdict || {
           level: "safe",
-          label: "বিশ্বস্ত কাস্টমার ✅",
+          label: "তথ্য পাওয়া গেছে ✅",
           action: "নিশ্চিন্তে ক্যাশ অন ডেলিভারিতে পাঠান",
           color: "#16a34a",
-          reasons: ["৯৫%+ সফল ডেলিভারি রেকর্ড"],
+          reasons: [],
         },
-    source: "BD Courier Database",
+        source: key ? "BD Courier Live API" : "BD Courier (API Key দিন)",
+      };
+    }
+  } catch (err) {
+    console.warn("BD Courier check error:", err);
+  }
+
+  return {
+    total: 0,
+    delivered: 0,
+    cancelled: 0,
+    rate: 0,
+    couriers: [],
+    reports: [],
+    risk_verdict: {
+      level: "medium",
+      label: key ? "কানেকশন সমস্যা" : "API Key সেট করুন ⚠️",
+      action: key ? "পুনরায় চেষ্টা করুন" : "সেটিংস ট্যাবে BD Courier API Key যুক্ত করুন",
+      color: "#eab308",
+      reasons: [key ? "সার্ভার রেসপন্স দেয়নি" : "সেটিংস থেকে BD Courier API Key দিন"],
+    },
+    source: "BD Courier",
   };
 }

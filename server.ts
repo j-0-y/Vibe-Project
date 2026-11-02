@@ -113,6 +113,128 @@ async function main() {
     });
   });
 
+  /* ---------------- BD Courier Fraud Check Endpoint ---------------- */
+  // /api/bdcourier/check
+  app.all("/api/bdcourier/check", async (req, res) => {
+    res.setHeader("Access-Control-Allow-Origin", "*");
+    res.setHeader("Access-Control-Allow-Headers", "Content-Type, Authorization, x-bdcourier-key");
+    res.setHeader("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
+    if (req.method === "OPTIONS") return res.status(200).end();
+
+    const body = req.body || {};
+    const phone = String(body.phone || req.query?.phone || "").trim().replace(/\D/g, "");
+    const apiKey = (
+      req.headers["x-bdcourier-key"] ||
+      body.apiKey ||
+      process.env.BD_COURIER_API_KEY ||
+      ""
+    ).toString().trim();
+
+    if (!phone || phone.length < 11) {
+      return res.status(400).json({ error: "সঠিক ১১ ডিজিটের ফোন নম্বর দিন" });
+    }
+
+    if (!apiKey) {
+      return res.status(200).json({
+        configured: false,
+        message: "বিডি কুরিয়ার API Key কনফিগার করা হয়নি। সেটিংস ট্যাবে গিয়ে API Key যুক্ত করুন।",
+        phone,
+        total: 0,
+        delivered: 0,
+        cancelled: 0,
+        rate: 0,
+        risk_verdict: {
+          level: "warning",
+          label: "API Key প্রয়োজন ⚠️",
+          action: "সেটিংস থেকে BD Courier API Key সেট করুন",
+          color: "#eab308",
+          reasons: ["লাইভ ডাটা পেতে BD Courier API Key প্রয়োজন"],
+        },
+      });
+    }
+
+    const endpoints = [
+      "https://bdcourier.com/api/courier-check",
+      "https://api.bdcourier.com/courier-check",
+    ];
+
+    for (const url of endpoints) {
+      try {
+        const resp = await fetch(url, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${apiKey}`,
+            "api-key": apiKey,
+            "x-api-key": apiKey,
+          },
+          body: JSON.stringify({ phone }),
+        });
+
+        if (resp.ok) {
+          const data = await resp.json();
+          const total = Number(data.total_parcels || data.total || data.data?.total || 0);
+          const delivered = Number(data.success_parcels || data.delivered || data.data?.delivered || 0);
+          const cancelled = Number(data.cancelled_parcels || data.cancelled || data.data?.cancelled || 0);
+          const rate = total > 0 ? Math.round((delivered / total) * 100) : (data.success_rate || 0);
+
+          let riskLevel: "safe" | "medium" | "high" = "safe";
+          let label = "বিশ্বস্ত কাস্টমার ✅";
+          let action = "নিশ্চিন্তে ক্যাশ অন ডেলিভারিতে পাঠান";
+          let color = "#16a34a";
+
+          if (total > 0 && rate < 60) {
+            riskLevel = "high";
+            label = "উচ্চ ঝুঁকিপূর্ণ কাস্টমার 🚨";
+            action = "পার্সেল পাঠানোর আগে ডেলিভারি চার্জ অগ্রিম নিন";
+            color = "#dc2626";
+          } else if (total > 0 && rate < 80) {
+            riskLevel = "medium";
+            label = "সতর্কতা প্রয়োজন ⚠️";
+            action = "অগ্রিম ডেলিভারি চার্জ নিয়ে কনফার্ম করুন";
+            color = "#eab308";
+          }
+
+          return res.status(200).json({
+            configured: true,
+            phone,
+            total,
+            delivered,
+            cancelled,
+            rate,
+            risk_verdict: {
+              level: riskLevel,
+              label,
+              action,
+              color,
+              reasons: [total > 0 ? `মোট ${total} পার্সেলের মধ্যে ${delivered} ডেলিভারি (${rate}%)` : "নতুন নম্বর"],
+            },
+            source: "BD Courier Live API",
+            raw: data,
+          });
+        }
+      } catch {}
+    }
+
+    return res.status(200).json({
+      configured: true,
+      warning: "BD Courier রেসপন্স দেয়নি। API Key সঠিক আছে কিনা যাচাই করুন।",
+      phone,
+      total: 0,
+      delivered: 0,
+      cancelled: 0,
+      rate: 0,
+      risk_verdict: {
+        level: "medium",
+        label: "API সংযোগ সমস্যা ⚠️",
+        action: "সঠিক BD Courier API Key দিয়েছেন কি না পরীক্ষা করুন",
+        color: "#eab308",
+        reasons: ["বিডি কুরিয়ার সার্ভারের সাথে সংযোগ করা সম্ভব হয়নি"],
+      },
+      source: "BD Courier Check",
+    });
+  });
+
   /* ---------------- Frontend Vite / Static Integration ---------------- */
   if (process.env.NODE_ENV === "production") {
     app.use(express.static(path.resolve(__dirname, "dist")));
