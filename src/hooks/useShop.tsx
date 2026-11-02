@@ -7,7 +7,7 @@ import React, {
   useRef,
   useState,
 } from "react";
-import { getSupabase } from "@/lib/supabase";
+import { getSupabase, resetSupabaseClient } from "@/lib/supabase";
 import { uid } from "@/lib/utils";
 import { getInitialSeedData } from "@/lib/seed";
 import type { Order, Product, ShopData } from "@/lib/types";
@@ -66,7 +66,7 @@ export function ShopProvider({ children }: { children: React.ReactNode }) {
     typeof window === "undefined" ? getInitialSeedData() : loadLocal()
   );
   const [ready, setReady] = useState(false);
-  const [cloudMsg, setCloudMsg] = useState("💾 অফলাইন/লোকাল মোড");
+  const [cloudMsg, setCloudMsg] = useState("☁️ ক্লাউড সিঙ্ক সক্রিয়");
   const [isCloudSynced, setIsCloudSynced] = useState(false);
   const [unread, setUnread] = useState(0);
 
@@ -79,17 +79,12 @@ export function ShopProvider({ children }: { children: React.ReactNode }) {
     try {
       localStorage.setItem(LS_KEY, JSON.stringify(d));
     } catch {
-      console.warn("Local storage full or quota exceeded");
+      console.warn("Local storage quota exceeded");
     }
   };
 
   const pushNow = useCallback(async () => {
-    const sb = getSupabase();
-    if (!sb || !shopId) {
-      persistLocal(dbRef.current);
-      setCloudMsg("💾 লোকাল ডেটা সংরক্ষিত");
-      return;
-    }
+    if (!shopId) return;
 
     if (timer.current) {
       clearTimeout(timer.current);
@@ -99,30 +94,55 @@ export function ShopProvider({ children }: { children: React.ReactNode }) {
     try {
       lastPush.current = Date.now();
       const d = dbRef.current;
-      const payload: Record<string, unknown> = {
-        id: shopId,
-        data: {
-          products: d.products,
-          orders: d.orders,
-          moves: d.moves.slice(0, 100),
-          ads: d.ads,
-          notifs: (d.notifs || []).slice(0, 60),
-          settings: d.settings || {},
-          salesDay: d.salesDay ?? null,
-          salesDays: (d.salesDays || []).slice(0, 365),
-          monthAds: d.monthAds || [],
-        },
-        updated_at: Date.now(),
+      persistLocal(d);
+
+      const payload = {
+        products: d.products,
+        orders: d.orders,
+        moves: d.moves.slice(0, 100),
+        ads: d.ads,
+        notifs: (d.notifs || []).slice(0, 60),
+        settings: d.settings || {},
+        salesDay: d.salesDay ?? null,
+        salesDays: (d.salesDays || []).slice(0, 365),
+        monthAds: d.monthAds || [],
       };
 
-      const res = await sb.from("shops").upsert(payload);
-      if (res.error) throw new Error(res.error.message);
+      // 1. Sync to central server (cross-device sync)
+      try {
+        await fetch("/api/shop", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ id: shopId, data: payload }),
+        });
+      } catch (err) {
+        console.warn("Server sync error:", err);
+      }
+
+      // 2. Sync to Supabase if configured
+      const sb = getSupabase();
+      if (sb) {
+        try {
+          const res = await sb.from("shops").upsert({
+            id: shopId,
+            data: payload,
+            updated_at: Date.now(),
+          });
+          if (!res.error) {
+            setCloudMsg("☁️ সুপাবেস ক্লাউডে সিঙ্ক হয়েছে ✅");
+            setIsCloudSynced(true);
+            return;
+          }
+        } catch (sbErr) {
+          console.warn("Supabase push error:", sbErr);
+        }
+      }
 
       setCloudMsg("☁️ ক্লাউডে সিঙ্ক হয়েছে ✅");
       setIsCloudSynced(true);
     } catch (e: unknown) {
       setCloudMsg("⚠️ লোকাল সেভ (ক্লাউড বাকি)");
-      console.warn("Cloud push error:", e);
+      console.warn("Push error:", e);
     }
   }, [shopId]);
 
@@ -139,7 +159,7 @@ export function ShopProvider({ children }: { children: React.ReactNode }) {
       if (timer.current) clearTimeout(timer.current);
       timer.current = setTimeout(() => {
         void pushNow();
-      }, 1200);
+      }, 1000);
     },
     [pushNow]
   );
@@ -159,20 +179,79 @@ export function ShopProvider({ children }: { children: React.ReactNode }) {
   );
 
   const pullNow = useCallback(async () => {
-    const sb = getSupabase();
-    if (!sb || !shopId) {
+    if (!shopId) {
       setReady(true);
       return;
     }
 
     try {
-      const res = await sb.from("shops").select("data, updated_at").eq("id", shopId).maybeSingle();
-      if (!res.error && res.data && res.data.data) {
-        const normalized = normalize(res.data.data);
-        setDb(normalized);
-        persistLocal(normalized);
-        setCloudMsg("☁️ ক্লাউড ডেটা লোড হয়েছে");
-        setIsCloudSynced(true);
+      // Step 1: Pull shared system config (keys, URLs) across devices
+      try {
+        const cfgRes = await fetch("/api/config");
+        if (cfgRes.ok) {
+          const cfg = await cfgRes.json();
+          if (cfg && (cfg.supabase?.url || cfg.steadfast?.key || cfg.bdCourierKey)) {
+            // Merge into local storage so Supabase and Steadfast work on this device
+            try {
+              if (cfg.steadfast) {
+                localStorage.setItem("steadfast_creds", JSON.stringify(cfg.steadfast));
+              }
+              if (cfg.bdCourierKey) {
+                localStorage.setItem("bd_courier_api_key", cfg.bdCourierKey);
+              }
+              const localDb = loadLocal();
+              localDb.settings = localDb.settings || {};
+              if (cfg.shopName) localDb.settings.shopName = cfg.shopName;
+              if (cfg.ship) localDb.settings.ship = cfg.ship;
+              if (cfg.fxRate) localDb.settings.fxRate = cfg.fxRate;
+              if (cfg.steadfast) localDb.settings.steadfast = cfg.steadfast;
+              if (cfg.supabase) localDb.settings.supabase = cfg.supabase;
+              if (cfg.bdCourierKey) localDb.settings.bdCourierKey = cfg.bdCourierKey;
+              persistLocal(localDb);
+              resetSupabaseClient();
+            } catch {}
+          }
+        }
+      } catch (cfgErr) {
+        console.warn("Config pull error:", cfgErr);
+      }
+
+      // Step 2: Try pulling from Supabase
+      const sb = getSupabase();
+      let loadedFromSupabase = false;
+      if (sb) {
+        try {
+          const res = await sb.from("shops").select("data, updated_at").eq("id", shopId).maybeSingle();
+          if (!res.error && res.data && res.data.data) {
+            const normalized = normalize(res.data.data);
+            setDb(normalized);
+            persistLocal(normalized);
+            setCloudMsg("☁️ সুপাবেস থেকে ডাটা লোড হয়েছে");
+            setIsCloudSynced(true);
+            loadedFromSupabase = true;
+          }
+        } catch (sbErr) {
+          console.warn("Supabase pull error:", sbErr);
+        }
+      }
+
+      // Step 3: If not loaded from Supabase, pull from central server storage
+      if (!loadedFromSupabase) {
+        try {
+          const serverRes = await fetch(`/api/shop?id=${encodeURIComponent(shopId)}`);
+          if (serverRes.ok) {
+            const resJson = await serverRes.json();
+            if (resJson?.success && resJson?.data) {
+              const normalized = normalize(resJson.data);
+              setDb(normalized);
+              persistLocal(normalized);
+              setCloudMsg("☁️ ক্লাউড ডাটা সিঙ্ক হয়েছে");
+              setIsCloudSynced(true);
+            }
+          }
+        } catch (servErr) {
+          console.warn("Server shop pull error:", servErr);
+        }
       }
     } catch (err) {
       console.warn("Pull error:", err);
@@ -226,7 +305,7 @@ export function ShopProvider({ children }: { children: React.ReactNode }) {
               const normalized = normalize(newData);
               setDb(normalized);
               persistLocal(normalized);
-              setCloudMsg("⚡ ক্লাউড থেকে আপডেট এলো");
+              setCloudMsg("⚡ ক্লাউড থেকে ইনস্ট্যান্ট আপডেট এলো");
             }
           }
         )

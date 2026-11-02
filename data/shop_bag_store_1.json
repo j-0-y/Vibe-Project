@@ -1,0 +1,98 @@
+{
+  "products": [
+    {
+      "id": "p1",
+      "name": "প্রিমিয়াম লেদার হ্যান্ডব্যাগ (Classic Handbag)",
+      "code": "BG-101",
+      "price": 1850,
+      "buy": 1100,
+      "stock": 25,
+      "variants": [
+        { "id": "v1_1", "label": "কালো (Black)", "qty": 12 },
+        { "id": "v1_2", "label": "বাদামী (Brown)", "qty": 8 },
+        { "id": "v1_3", "label": "ট্যান (Tan)", "qty": 5 }
+      ],
+      "category": "Handbag",
+      "img": "https://images.unsplash.com/photo-1584917865442-de89df76afd3?auto=format&fit=crop&w=400&q=80"
+    },
+    {
+      "id": "p2",
+      "name": "ক্যাজুয়াল ক্যানভাস টোট ব্যাগ (Canvas Tote)",
+      "code": "BG-102",
+      "price": 950,
+      "buy": 520,
+      "stock": 42,
+      "variants": [
+        { "id": "v2_1", "label": "অফ-হোয়াইট (Off-White)", "qty": 20 },
+        { "id": "v2_2", "label": "কালো (Black)", "qty": 22 }
+      ],
+      "category": "Tote",
+      "img": "https://images.unsplash.com/photo-1544816155-12df9643f363?auto=format&fit=crop&w=400&q=80"
+    },
+    {
+      "id": "p3",
+      "name": "মিনি ক্রস বডি স্লিঙ ব্যাগ (Crossbody Sling)",
+      "code": "BG-103",
+      "price": 1250,
+      "buy": 680,
+      "stock": 38,
+      "variants": [
+        { "id": "v3_1", "label": "ট্যান (Tan)", "qty": 14 },
+        { "id": "v3_2", "label": "মেরুন (Maroon)", "qty": 12 },
+        { "id": "v3_3", "label": "কালো (Black)", "qty": 12 }
+      ],
+      "category": "Crossbody",
+      "img": "https://images.unsplash.com/photo-1590874103328-eac38a683ce7?auto=format&fit=crop&w=400&q=80"
+    },
+    {
+      "id": "p4",
+      "name": "স্মার্ট ওয়াটারপ্রুফ ব্যাকপ্যাক (Anti-Theft Backpack)",
+      "code": "BG-104",
+      "price": 2200,
+      "buy": 1350,
+      "stock": 8,
+      "variants": [
+        { "id": "v4_1", "label": "কালো (Black)", "qty": 6 },
+        { "id": "v4_2", "label": "কফি (Coffee)", "qty": 2 }
+      ],
+      "category": "Backpack",
+      "img": "https://images.unsplash.com/photo-1553062407-98eeb64c6a62?auto=format&fit=crop&w=400&q=80"
+    },
+    {
+      "id": "p5",
+      "name": "চেইন স্ট্র্যাপ স্লিং ব্যাগ (Chain Sling Clutch)",
+      "code": "BG-105",
+      "price": 1450,
+      "buy": 820,
+      "stock": 11,
+      "variants": [
+        { "id": "v5_1", "label": "গোল্ডেন চেইন কালো (Black)", "qty": 10 },
+        { "id": "v5_2", "label": "ট্যান (Tan)", "qty": 1 }
+      ],
+      "category": "Clutch",
+      "img": "https://images.unsplash.com/photo-1566150905458-1bf1fc113f0d?auto=format&fit=crop&w=400&q=80"
+    }
+  ],
+  "orders": [],
+  "moves": [
+    {
+      "id": "m1",
+      "date": "02/11/2026",
+      "text": "🎉 দোকান সফলভাবে ক্লাউডে সংযুক্ত হলো"
+    }
+  ],
+  "ads": [],
+  "notifs": [],
+  "settings": {
+    "shopName": "আমার ব্যাগের দোকান",
+    "fxRate": 130,
+    "ship": {
+      "inside": { "cost": 80, "fee": 80 },
+      "sub": { "cost": 100, "fee": 100 },
+      "outside": { "cost": 115, "fee": 130 }
+    }
+  },
+  "salesDay": null,
+  "salesDays": [],
+  "monthAds": []
+}

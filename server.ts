@@ -1,4 +1,5 @@
 import express from "express";
+import fs from "fs";
 import path from "path";
 import { fileURLToPath } from "url";
 import { createServer as createViteServer } from "vite";
@@ -233,6 +234,63 @@ async function main() {
       },
       source: "BD Courier Check",
     });
+  });
+
+  /* ---------------- Shared Config Endpoint (Cross-device sync) ---------------- */
+  // /api/config
+  const DATA_DIR = path.resolve(__dirname, "data");
+  const CONFIG_FILE = path.join(DATA_DIR, "config.json");
+
+  app.get("/api/config", (_req, res) => {
+    try {
+      if (fs.existsSync(CONFIG_FILE)) {
+        return res.json(JSON.parse(fs.readFileSync(CONFIG_FILE, "utf-8")));
+      }
+    } catch {}
+    res.json({});
+  });
+
+  app.post("/api/config", (req, res) => {
+    try {
+      if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true });
+      let current: any = {};
+      try {
+        if (fs.existsSync(CONFIG_FILE)) {
+          current = JSON.parse(fs.readFileSync(CONFIG_FILE, "utf-8"));
+        }
+      } catch {}
+      const updated = { ...current, ...(req.body || {}), updatedAt: Date.now() };
+      fs.writeFileSync(CONFIG_FILE, JSON.stringify(updated, null, 2), "utf-8");
+      res.json({ success: true, config: updated });
+    } catch (e: any) {
+      res.status(500).json({ error: e?.message || "Failed to save config" });
+    }
+  });
+
+  /* ---------------- Shared Shop Data Endpoint (Cross-device sync) ---------------- */
+  // /api/shop
+  app.get("/api/shop", (req, res) => {
+    const shopId = (req.query?.id || "bag_store_1").toString().trim();
+    const filePath = path.join(DATA_DIR, `shop_${shopId}.json`);
+    try {
+      if (fs.existsSync(filePath)) {
+        return res.json({ success: true, data: JSON.parse(fs.readFileSync(filePath, "utf-8")) });
+      }
+    } catch {}
+    res.json({ success: false, data: null });
+  });
+
+  app.post("/api/shop", (req, res) => {
+    const shopId = (req.body?.id || "bag_store_1").toString().trim();
+    const shopData = req.body?.data || req.body;
+    const filePath = path.join(DATA_DIR, `shop_${shopId}.json`);
+    try {
+      if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true });
+      fs.writeFileSync(filePath, JSON.stringify(shopData, null, 2), "utf-8");
+      res.json({ success: true, shopId, updatedAt: Date.now() });
+    } catch (e: any) {
+      res.status(500).json({ error: e?.message || "Failed to save shop" });
+    }
   });
 
   /* ---------------- Frontend Vite / Static Integration ---------------- */

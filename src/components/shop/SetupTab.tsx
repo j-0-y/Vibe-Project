@@ -68,7 +68,7 @@ export default function SetupTab() {
     }
   }, [db.settings]);
 
-  // Load stored steadfast and bd courier creds if present
+  // Load stored steadfast, supabase, and bd courier creds from server or localStorage
   useEffect(() => {
     try {
       const l = JSON.parse(localStorage.getItem("steadfast_creds") || "{}");
@@ -77,6 +77,20 @@ export default function SetupTab() {
       const b = localStorage.getItem("bd_courier_api_key");
       if (b && !bdKey) setBdKey(b);
     } catch {}
+
+    // Also pull directly from shared server config for instant cross-device sync
+    fetch("/api/config")
+      .then((r) => r.json())
+      .then((cfg) => {
+        if (!cfg) return;
+        if (cfg.supabase?.url) setSbUrl(cfg.supabase.url);
+        if (cfg.supabase?.anonKey) setSbAnonKey(cfg.supabase.anonKey);
+        if (cfg.steadfast?.key) setSfKey(cfg.steadfast.key);
+        if (cfg.steadfast?.secret) setSfSecret(cfg.steadfast.secret);
+        if (cfg.bdCourierKey) setBdKey(cfg.bdCourierKey);
+        if (cfg.shopName) setShopName(cfg.shopName);
+      })
+      .catch(() => {});
   }, []);
 
   const saveSettings = async () => {
@@ -98,6 +112,28 @@ export default function SetupTab() {
     };
 
     setIsSaving(true);
+
+    // Save to central server for instant cross-device sync (Mobile & Laptop)
+    try {
+      await fetch("/api/config", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          shopName: cleanName,
+          fxRate: +fxRate || 130,
+          steadfast,
+          supabase,
+          bdCourierKey: bdKey.trim(),
+          ship: {
+            inside: { cost: +insideCost || 80, fee: +insideFee || 80 },
+            sub: { cost: +subCost || 100, fee: +subFee || 100 },
+            outside: { cost: +outsideCost || 115, fee: +outsideFee || 130 },
+          },
+        }),
+      });
+    } catch (cfgErr) {
+      console.warn("Server config sync warning:", cfgErr);
+    }
 
     await mutateAndSync((d) => {
       d.settings = d.settings || {};

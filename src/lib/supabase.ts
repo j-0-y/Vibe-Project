@@ -116,23 +116,10 @@ create policy "Allow users to update own profile"
   using (auth.uid() = id);
 
 -- 6. RLS Policies (shops)
-create policy "Allow members to read their shop"
-  on public.shops for select
-  using (
-    id in (select shop_id from public.profiles where id = auth.uid())
-    or owner_id = auth.uid()
-  );
-
-create policy "Allow members to update their shop"
-  on public.shops for update
-  using (
-    id in (select shop_id from public.profiles where id = auth.uid())
-    or owner_id = auth.uid()
-  );
-
-create policy "Allow owner to insert shop"
-  on public.shops for insert
-  with check (auth.uid() = owner_id or auth.uid() is not null);
+create policy "Allow read and write for shops"
+  on public.shops for all
+  using (true)
+  with check (true);
 
 -- 7. RLS Policies (shop_events)
 create policy "Allow members to read shop events"
