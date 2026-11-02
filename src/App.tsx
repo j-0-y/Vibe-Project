@@ -70,6 +70,59 @@ function AppShell() {
     return () => window.removeEventListener("hashchange", onHashChange);
   }, []);
 
+  // 1-Click Mobile / Cross-Device Sync Installer
+  useEffect(() => {
+    try {
+      const hash = window.location.hash || "";
+      const search = window.location.search || "";
+      let rawSync = "";
+
+      if (hash.includes("sync=")) {
+        const parts = hash.split("sync=");
+        if (parts[1]) rawSync = parts[1].split("&")[0];
+      } else if (search.includes("sync=")) {
+        const sp = new URLSearchParams(search);
+        rawSync = sp.get("sync") || "";
+      }
+
+      if (rawSync) {
+        const jsonStr = decodeURIComponent(atob(rawSync));
+        const decoded = JSON.parse(jsonStr);
+        if (decoded) {
+          const ls = localStorage.getItem("bag_shop_v1");
+          const localDb = ls ? JSON.parse(ls) : {};
+          localDb.settings = localDb.settings || {};
+
+          if (decoded.supabase?.url) localDb.settings.supabase = decoded.supabase;
+          if (decoded.steadfast?.key) {
+            localDb.settings.steadfast = decoded.steadfast;
+            localStorage.setItem("steadfast_creds", JSON.stringify(decoded.steadfast));
+          }
+          if (decoded.bdCourierKey) {
+            localDb.settings.bdCourierKey = decoded.bdCourierKey;
+            localStorage.setItem("bd_courier_api_key", decoded.bdCourierKey);
+          }
+          if (decoded.shopName) localDb.settings.shopName = decoded.shopName;
+
+          localStorage.setItem("bag_shop_v1", JSON.stringify(localDb));
+
+          // Also notify server
+          fetch("/api/config", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(decoded),
+          }).catch(() => {});
+
+          window.location.hash = "#app";
+          alert("🎉 ক্লাউড ডাটাবেস ও কি (Keys) সফলভাবে এই ডিভাইসে সিঙ্ক হয়েছে!");
+          window.location.reload();
+        }
+      }
+    } catch (e) {
+      console.warn("Mobile sync parse error:", e);
+    }
+  }, []);
+
   const go = (target: string) => {
     const id = target as Tab;
     setTab(id);

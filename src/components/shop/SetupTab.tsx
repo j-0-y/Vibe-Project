@@ -4,6 +4,7 @@ import { useShop } from "@/hooks/useShop";
 import { useAuth } from "@/hooks/useAuth";
 import { steadApi } from "@/lib/api";
 import { resetSupabaseClient, SUPABASE_SQL_SCHEMA } from "@/lib/supabase";
+import { createClient } from "@supabase/supabase-js";
 import { Btn, Card, inputCls, Field } from "@/components/ui";
 
 export default function SetupTab() {
@@ -35,11 +36,17 @@ export default function SetupTab() {
   const [sbUrl, setSbUrl] = useState(db.settings?.supabase?.url || "");
   const [sbAnonKey, setSbAnonKey] = useState(db.settings?.supabase?.anonKey || "");
   const [copiedSql, setCopiedSql] = useState(false);
+  const [testingSb, setTestingSb] = useState(false);
+  const [sbTestMsg, setSbTestMsg] = useState<{ text: string; ok: boolean } | null>(null);
 
   // BD Courier API Key
   const [bdKey, setBdKey] = useState(db.settings?.bdCourierKey || "");
   const [testingBd, setTestingBd] = useState(false);
   const [bdTestMsg, setBdTestMsg] = useState<string | null>(null);
+
+  // Mobile 1-Click Sync
+  const [copiedSyncLink, setCopiedSyncLink] = useState(false);
+  const [showSyncQr, setShowSyncQr] = useState(false);
 
   const [isSaving, setIsSaving] = useState(false);
 
@@ -181,6 +188,70 @@ export default function SetupTab() {
       setBdTestMsg("সার্ভারের সাথে সংযোগ করা সম্ভব হয়নি");
     } finally {
       setTestingBd(false);
+    }
+  };
+
+  const testSupabaseConnection = async () => {
+    if (!sbUrl.trim() || !sbAnonKey.trim()) {
+      alert("আগে সুপাবেস URL এবং Anon Key দিন");
+      return;
+    }
+    setTestingSb(true);
+    setSbTestMsg(null);
+    try {
+      const client = createClient(sbUrl.trim(), sbAnonKey.trim());
+      const res = await client.from("shops").select("id").limit(1);
+      if (res.error) {
+        if (
+          res.error.code === "42P01" ||
+          res.error.message.includes("relation \"public.shops\" does not exist") ||
+          res.error.message.includes("does not exist")
+        ) {
+          setSbTestMsg({
+            ok: false,
+            text: "⚠️ সুপাবেস প্রজেক্ট পাওয়া গেছে, কিন্তু 'shops' টেবিল তৈরি হয়নি! উপরের '📋 SQL স্ক্রিপ্ট কপি' বাটনে ক্লিক করে সুপাবেসের SQL Editor-এ রান করুন।",
+          });
+        } else {
+          setSbTestMsg({
+            ok: false,
+            text: `⚠️ সুপাবেস এরর: ${res.error.message}`,
+          });
+        }
+      } else {
+        setSbTestMsg({
+          ok: true,
+          text: "✅ সুপাবেস ক্লাউড ডাটাবেস সম্পূর্ণ সক্রিয় ও কানেক্টেড!",
+        });
+      }
+    } catch (e: any) {
+      setSbTestMsg({
+        ok: false,
+        text: `⚠️ সংযোগে ব্যর্থ: ${e?.message || "URL বা Anon Key সঠিক নয়"}`,
+      });
+    } finally {
+      setTestingSb(false);
+    }
+  };
+
+  const getSyncUrl = () => {
+    const payload = {
+      supabase: { url: sbUrl.trim(), anonKey: sbAnonKey.trim() },
+      steadfast: { key: sfKey.trim(), secret: sfSecret.trim(), base: sfBase.trim() },
+      bdCourierKey: bdKey.trim(),
+      shopName: shopName.trim(),
+    };
+    const b64 = btoa(encodeURIComponent(JSON.stringify(payload)));
+    return `${window.location.origin}/#sync=${b64}`;
+  };
+
+  const copyMobileSyncLink = () => {
+    const url = getSyncUrl();
+    try {
+      navigator.clipboard.writeText(url);
+      setCopiedSyncLink(true);
+      setTimeout(() => setCopiedSyncLink(false), 5000);
+    } catch {
+      alert("লিংক: " + url);
     }
   };
 
@@ -448,13 +519,37 @@ export default function SetupTab() {
           <h3 className="font-bold text-stone-900 text-sm flex items-center gap-1.5">
             ☁️ সুপাবেস ক্লাউড ডাটাবেস (Supabase)
           </h3>
-          <Btn small color={copiedSql ? "green" : "gray"} onClick={copySqlScript}>
-            {copiedSql ? "✅ কপি হয়েছে" : "📋 SQL স্ক্রিপ্ট কপি"}
-          </Btn>
+          <div className="flex items-center gap-1.5">
+            <Btn
+              small
+              color="green"
+              onClick={testSupabaseConnection}
+              disabled={testingSb}
+            >
+              {testingSb ? "টেস্ট হচ্ছে..." : "⚡ টেস্ট কানেকশন"}
+            </Btn>
+            <Btn small color={copiedSql ? "green" : "gray"} onClick={copySqlScript}>
+              {copiedSql ? "✅ কপি হয়েছে" : "📋 SQL স্ক্রিপ্ট কপি"}
+            </Btn>
+          </div>
         </div>
+
         <p className="text-xs text-stone-500 mb-2">
           সুপাবেস প্রজেক্টের Project Settings &gt; API থেকে URL ও anon key এখানে দিতে পারেন:
         </p>
+
+        {sbTestMsg && (
+          <div
+            className={`mb-3 p-2.5 rounded-xl text-xs font-bold text-center ${
+              sbTestMsg.ok
+                ? "bg-emerald-50 border border-emerald-300 text-emerald-900"
+                : "bg-rose-50 border border-rose-300 text-rose-900"
+            }`}
+          >
+            {sbTestMsg.text}
+          </div>
+        )}
+
         <div className="space-y-2">
           <Field label="Supabase URL">
             <input
@@ -474,6 +569,57 @@ export default function SetupTab() {
             />
           </Field>
         </div>
+      </Card>
+
+      {/* 📲 Mobile & Other Devices 1-Click Sync Card */}
+      <Card className="border-amber-500/40 bg-amber-50/40">
+        <div className="flex items-center justify-between mb-2">
+          <h3 className="font-bold text-stone-900 text-sm flex items-center gap-1.5">
+            <span>📲</span>
+            <span>মোবাইল বা অন্য ডিভাইসে ১-ক্লিক সিঙ্ক (Instant Sync)</span>
+          </h3>
+          <span className="text-[11px] font-bold px-2 py-0.5 rounded-full bg-amber-200 text-amber-900">
+            ঝামেলাহীন
+          </span>
+        </div>
+
+        <p className="text-xs text-stone-600 mb-3 leading-relaxed">
+          মোবাইলে বারবার এপিআই কি টাইপ করার ঝামেলা নেই! নিচের বাটনে ক্লিক করে সিঙ্ক লিংকটি আপনার হোয়াটসঅ্যাপ বা মেসেঞ্জারে পাঠিয়ে ফোনে ওপেন করলেই অথবা কিউআর কোড স্ক্যান করলেই তাৎক্ষণিক সব কি (Keys) ও ক্লাউড ডাটাবেস ফোনে কানেক্ট হয়ে যাবে:
+        </p>
+
+        <div className="flex flex-wrap gap-2 mb-3">
+          <Btn
+            color={copiedSyncLink ? "green" : "amber"}
+            onClick={copyMobileSyncLink}
+            className="flex-1"
+          >
+            {copiedSyncLink ? "✅ সিঙ্ক লিংক কপি হয়েছে!" : "🔗 মোবাইল সিঙ্ক লিংক কপি করুন"}
+          </Btn>
+          <Btn
+            color="gray"
+            onClick={() => setShowSyncQr(!showSyncQr)}
+          >
+            {showSyncQr ? "❌ QR বন্ধ করুন" : "📷 QR কোড দেখুন"}
+          </Btn>
+        </div>
+
+        {showSyncQr && (
+          <div className="p-4 bg-white rounded-xl border border-stone-200 text-center mb-2">
+            <p className="text-xs text-stone-600 font-medium mb-2">
+              আপনার ফোনের ক্যামেরা দিয়ে নিচের QR কোডটি স্ক্যান করুন:
+            </p>
+            <div className="flex justify-center">
+              <img
+                src={`https://api.qrserver.com/v1/create-qr-code/?size=180x180&data=${encodeURIComponent(getSyncUrl())}`}
+                alt="Mobile Sync QR Code"
+                className="w-44 h-44 rounded-lg border border-stone-200 shadow-xs"
+              />
+            </div>
+            <p className="text-[11px] text-stone-400 mt-2">
+              স্ক্যান করলে সরাসরি ফোনে সব সেটিংস ও ক্লাউড ডাটাবেস যুক্ত হয়ে যাবে
+            </p>
+          </div>
+        )}
       </Card>
 
       {/* Save Settings Button */}
