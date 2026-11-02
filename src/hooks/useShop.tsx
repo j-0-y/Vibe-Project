@@ -7,36 +7,12 @@ import React, {
   useRef,
   useState,
 } from "react";
-import type { RealtimeChannel } from "@supabase/supabase-js";
 import { getSupabase } from "@/lib/supabase";
-import type { ShopData, Order } from "@/lib/types";
+import { uid } from "@/lib/utils";
 import { getInitialSeedData } from "@/lib/seed";
+import type { Order, Product, ShopData } from "@/lib/types";
 import { useAuth } from "./useAuth";
-
-const LS_KEY = "bag_shop_v1";
-
-function normalize(d: Partial<ShopData>): ShopData {
-  const seed = getInitialSeedData();
-  return {
-    products: d.products || seed.products,
-    orders: d.orders || seed.orders,
-    moves: d.moves || seed.moves,
-    ads: d.ads || [],
-    notifs: (d.notifs || seed.notifs || []).slice(0, 60),
-    settings: d.settings || seed.settings,
-    salesDay: d.salesDay ?? seed.salesDay,
-    salesDays: (d.salesDays || []).slice(0, 365),
-    monthAds: d.monthAds || [],
-  };
-}
-
-function loadLocal(): ShopData {
-  try {
-    const s = localStorage.getItem(LS_KEY);
-    if (s) return normalize(JSON.parse(s));
-  } catch {}
-  return getInitialSeedData();
-}
+import type { RealtimeChannel } from "@supabase/supabase-js";
 
 interface ShopCtx {
   db: ShopData;
@@ -55,8 +31,37 @@ interface ShopCtx {
 
 const Ctx = createContext<ShopCtx | null>(null);
 
+const LS_KEY = "bag_shop_v1";
+
+function loadLocal(): ShopData {
+  try {
+    const raw = localStorage.getItem(LS_KEY);
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      if (parsed && Array.isArray(parsed.products)) {
+        return normalize(parsed);
+      }
+    }
+  } catch {}
+  return getInitialSeedData();
+}
+
+function normalize(d: any): ShopData {
+  return {
+    products: Array.isArray(d?.products) ? d.products : [],
+    orders: Array.isArray(d?.orders) ? d.orders : [],
+    moves: Array.isArray(d?.moves) ? d.moves : [],
+    ads: Array.isArray(d?.ads) ? d.ads : [],
+    notifs: Array.isArray(d?.notifs) ? d.notifs : [],
+    settings: d?.settings || {},
+    salesDay: d?.salesDay ?? null,
+    salesDays: Array.isArray(d?.salesDays) ? d.salesDays : [],
+    monthAds: Array.isArray(d?.monthAds) ? d.monthAds : [],
+  };
+}
+
 export function ShopProvider({ children }: { children: React.ReactNode }) {
-  const { shopId, isDemoUser } = useAuth();
+  const { shopId } = useAuth();
   const [db, setDb] = useState<ShopData>(() =>
     typeof window === "undefined" ? getInitialSeedData() : loadLocal()
   );
@@ -80,7 +85,7 @@ export function ShopProvider({ children }: { children: React.ReactNode }) {
 
   const pushNow = useCallback(async () => {
     const sb = getSupabase();
-    if (!sb || !shopId || isDemoUser) {
+    if (!sb || !shopId) {
       persistLocal(dbRef.current);
       setCloudMsg("💾 লোকাল ডেটা সংরক্ষিত");
       return;
@@ -119,22 +124,25 @@ export function ShopProvider({ children }: { children: React.ReactNode }) {
       setCloudMsg("⚠️ লোকাল সেভ (ক্লাউড বাকি)");
       console.warn("Cloud push error:", e);
     }
-  }, [shopId, isDemoUser]);
+  }, [shopId]);
 
-  const mutate = useCallback((fn: (d: ShopData) => void) => {
-    setDb((prev) => {
-      const copy: ShopData = JSON.parse(JSON.stringify(prev));
-      fn(copy);
-      persistLocal(copy);
-      dbRef.current = copy;
-      return copy;
-    });
+  const mutate = useCallback(
+    (fn: (d: ShopData) => void) => {
+      setDb((prev) => {
+        const copy: ShopData = JSON.parse(JSON.stringify(prev));
+        fn(copy);
+        persistLocal(copy);
+        dbRef.current = copy;
+        return copy;
+      });
 
-    if (timer.current) clearTimeout(timer.current);
-    timer.current = setTimeout(() => {
-      void pushNow();
-    }, 1200);
-  }, [pushNow]);
+      if (timer.current) clearTimeout(timer.current);
+      timer.current = setTimeout(() => {
+        void pushNow();
+      }, 1200);
+    },
+    [pushNow]
+  );
 
   const mutateAndSync = useCallback(
     async (fn: (d: ShopData) => void) => {
@@ -152,7 +160,7 @@ export function ShopProvider({ children }: { children: React.ReactNode }) {
 
   const pullNow = useCallback(async () => {
     const sb = getSupabase();
-    if (!sb || !shopId || isDemoUser) {
+    if (!sb || !shopId) {
       setReady(true);
       return;
     }
@@ -171,28 +179,27 @@ export function ShopProvider({ children }: { children: React.ReactNode }) {
     } finally {
       setReady(true);
     }
-  }, [shopId, isDemoUser]);
+  }, [shopId]);
 
   const resetToDemoData = useCallback(() => {
     const fresh = getInitialSeedData();
     setDb(fresh);
     persistLocal(fresh);
     dbRef.current = fresh;
-    setCloudMsg("✨ ডেমো ডেটা রিলোড হয়েছে");
-  }, []);
+    void pushNow();
+  }, [pushNow]);
 
-  const notify = useCallback((title: string, body: string) => {
-    mutate((d) => {
-      d.notifs = d.notifs || [];
-      d.notifs.unshift({
-        id: Date.now().toString(36),
-        ts: Date.now(),
-        title,
-        body,
+  const notify = useCallback(
+    (title: string, body: string) => {
+      const n = { id: uid(), title, body, ts: Date.now() };
+      mutate((d) => {
+        d.notifs = d.notifs || [];
+        d.notifs.unshift(n);
       });
-    });
-    setUnread((u) => u + 1);
-  }, [mutate]);
+      setUnread((u) => u + 1);
+    },
+    [mutate]
+  );
 
   const markRead = useCallback(() => {
     setUnread(0);
@@ -203,7 +210,7 @@ export function ShopProvider({ children }: { children: React.ReactNode }) {
     void pullNow();
 
     const sb = getSupabase();
-    if (!sb || !shopId || isDemoUser) return;
+    if (!sb || !shopId) return;
 
     let ch: RealtimeChannel | null = null;
     try {
@@ -233,7 +240,7 @@ export function ShopProvider({ children }: { children: React.ReactNode }) {
         } catch {}
       }
     };
-  }, [pullNow, shopId, isDemoUser]);
+  }, [pullNow, shopId]);
 
   return (
     <Ctx.Provider

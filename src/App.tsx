@@ -8,8 +8,11 @@ import OrdersTab from "@/components/shop/OrdersTab";
 import ReportsTab from "@/components/shop/ReportsTab";
 import SetupTab from "@/components/shop/SetupTab";
 import GuideTab from "@/components/shop/GuideTab";
+import LandingView from "@/components/views/LandingView";
+import LoginView from "@/components/views/LoginView";
+import AdminView from "@/components/views/AdminView";
 import ErrorBoundary from "@/components/ErrorBoundary";
-import { Modal, Btn, inputCls } from "@/components/ui";
+import { Modal, Btn } from "@/components/ui";
 
 type Tab = "home" | "stock" | "orders" | "reports" | "guide" | "setup";
 
@@ -23,7 +26,7 @@ const TABS: Array<{ id: Tab; icon: string; label: string }> = [
 ];
 
 function AppShell() {
-  const { role, userEmail, logout } = useAuth();
+  const { role, userEmail, shopId, logout, setView, allShops, switchShop } = useAuth();
   const { db, unread, markRead } = useShop();
 
   const [tab, setTab] = useState<Tab>("home");
@@ -32,7 +35,7 @@ function AppShell() {
 
   const shopTitle = db.settings?.shopName || "আমার ব্যাগের দোকান";
 
-  // Hash navigation support
+  // Hash navigation support for tabs
   useEffect(() => {
     const fromHash = (): Tab | null => {
       try {
@@ -99,6 +102,14 @@ function AppShell() {
           </div>
 
           <div className="flex items-center gap-2">
+            {/* Quick Landing Page link */}
+            <button
+              onClick={() => setView("landing")}
+              className="text-xs font-bold text-stone-600 hover:text-stone-900 px-2 py-1 rounded-lg border border-stone-200 hidden sm:inline cursor-pointer"
+            >
+              🌐 হোমপেজ
+            </button>
+
             {/* Notification Bell */}
             <button
               onClick={() => {
@@ -119,7 +130,7 @@ function AppShell() {
             {/* Profile Avatar */}
             <button
               onClick={() => setShowProfile(true)}
-              className="w-8 h-8 rounded-xl bg-stone-200 hover:bg-stone-300 flex items-center justify-center text-xs font-black text-stone-700 cursor-pointer"
+              className="w-8 h-8 rounded-xl bg-amber-100 border border-amber-300 hover:bg-amber-200 flex items-center justify-center text-xs font-black text-amber-950 cursor-pointer"
               aria-label="প্রোফাইল"
             >
               {role === "owner" ? "👑" : "👤"}
@@ -189,22 +200,54 @@ function AppShell() {
         </Modal>
       )}
 
-      {/* Profile Modal */}
+      {/* Profile & Store Switcher Modal */}
       {showProfile && (
         <Modal title="👤 অ্যাকাউন্ট ও শপ প্রোফাইল" onClose={() => setShowProfile(false)}>
           <div className="space-y-3.5 text-xs text-stone-800">
             <div className="bg-amber-50 p-3 rounded-xl border border-amber-900/15">
               <div className="font-bold text-amber-950 text-sm">{shopTitle}</div>
-              <div className="text-stone-600 mt-1">ইউজার: {userEmail}</div>
-              <div className="text-stone-600">রোল: {role === "owner" ? "দোকানের মালিক" : "স্টাফ"}</div>
+              <div className="text-stone-600 mt-1">ইউজার: {userEmail || "owner@bagshop.com"}</div>
+              <div className="text-stone-600">
+                ভূমিকা: <b>{role === "owner" ? "দোকানের মালিক (Owner)" : "স্টাফ (Staff)"}</b>
+              </div>
+              <div className="text-stone-500 font-mono mt-0.5">
+                দোকান ID: {shopId || "bag_store_1"}
+              </div>
             </div>
 
-            <div className="space-y-2">
-              <Btn small color="dark" onClick={() => { setShowProfile(false); go("guide"); }}>
-                🚀 সেটআপ গাইড দেখুন
+            {/* Switch Shop if multiple */}
+            {allShops.length > 1 && (
+              <div className="bg-stone-50 p-2.5 rounded-xl border border-stone-200">
+                <span className="font-bold text-stone-700 block mb-1">
+                  🏪 অন্য দোকানে সুইচ করুন:
+                </span>
+                <div className="space-y-1">
+                  {allShops.map((s) => (
+                    <button
+                      key={s.id}
+                      onClick={() => {
+                        switchShop(s.id);
+                        setShowProfile(false);
+                      }}
+                      className={`w-full text-left p-1.5 rounded-lg text-xs font-semibold cursor-pointer ${
+                        s.id === shopId
+                          ? "bg-amber-900 text-white"
+                          : "bg-white hover:bg-stone-100 text-stone-800 border"
+                      }`}
+                    >
+                      {s.name} ({s.id})
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            <div className="space-y-2 pt-1">
+              <Btn small color="dark" onClick={() => { setShowProfile(false); setView("admin"); }}>
+                👑 সিস্টেম অ্যাডমিন প্যানেল
               </Btn>
-              <Btn small color="gray" onClick={() => { setShowProfile(false); go("setup"); }}>
-                ⚙️ সেটিংস ও ব্যালেন্স চেক
+              <Btn small color="gray" onClick={() => { setShowProfile(false); setView("landing"); }}>
+                🌐 পাবলিক ল্যান্ডিং হোমপেজ
               </Btn>
               <Btn small color="red" onClick={() => { logout(); setShowProfile(false); }}>
                 লগআউট করুন
@@ -217,11 +260,56 @@ function AppShell() {
   );
 }
 
+function MainView() {
+  const { view, authed, role, ready, setView } = useAuth();
+
+  if (!ready) {
+    return (
+      <div className="min-h-screen bg-[#fcf8f5] flex items-center justify-center text-stone-500 font-sans">
+        <div className="text-center">
+          <div className="text-4xl animate-bounce mb-2">👜</div>
+          <p className="font-bold text-sm">BagBox লোড হচ্ছে...</p>
+        </div>
+      </div>
+    );
+  }
+
+  // 1. Landing is always accessible publicly
+  if (view === "landing") return <LandingView />;
+
+  // 2. Must be logged in to view Admin or Store
+  if (!authed || view === "login") return <LoginView />;
+
+  // 3. Admin panel requires admin role
+  if (view === "admin") {
+    if (role !== "admin") {
+      return (
+        <div className="min-h-screen bg-[#fcf8f5] flex flex-col items-center justify-center p-4 text-center">
+          <div className="text-4xl mb-2">🚫</div>
+          <h2 className="text-lg font-black text-stone-900 mb-1">অ্যাক্সেস অনুমোদিত নয়</h2>
+          <p className="text-xs text-stone-500 max-w-xs mb-4">
+            শুধুমাত্র সুপার অ্যাডমিন (vibeupbd@gmail.com) এই প্যানেলে প্রবেশ করতে পারবে।
+          </p>
+          <button
+            onClick={() => setView("app")}
+            className="px-4 py-2 bg-amber-900 text-white rounded-xl text-xs font-bold cursor-pointer"
+          >
+            দোকানের অ্যাপে ফিরে যান
+          </button>
+        </div>
+      );
+    }
+    return <AdminView />;
+  }
+
+  return <AppShell />;
+}
+
 export default function App() {
   return (
     <AuthProvider>
       <ShopProvider>
-        <AppShell />
+        <MainView />
       </ShopProvider>
     </AuthProvider>
   );

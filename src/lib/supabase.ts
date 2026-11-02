@@ -3,9 +3,10 @@ import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 let client: SupabaseClient | null | undefined;
 
 export function getSupabaseCredentials(): { url: string; key: string } {
-  // 1. Env vars
-  const envUrl = (import.meta as unknown as { env?: Record<string, string> }).env?.VITE_SUPABASE_URL || "";
-  const envKey = (import.meta as unknown as { env?: Record<string, string> }).env?.VITE_SUPABASE_ANON_KEY || "";
+  // 1. Env vars (supports both VITE_ and NEXT_PUBLIC_ prefixes)
+  const env = (import.meta as unknown as { env?: Record<string, string> }).env || {};
+  const envUrl = env.VITE_SUPABASE_URL || env.NEXT_PUBLIC_SUPABASE_URL || "";
+  const envKey = env.VITE_SUPABASE_ANON_KEY || env.NEXT_PUBLIC_SUPABASE_ANON_KEY || "";
   if (envUrl && envKey) return { url: envUrl, key: envKey };
 
   // 2. Settings saved in localStorage

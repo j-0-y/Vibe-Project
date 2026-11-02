@@ -1,7 +1,25 @@
 "use client";
 import React, { createContext, useContext, useEffect, useState } from "react";
 import { getSupabase, isSupabaseConfigured } from "@/lib/supabase";
-import type { Profile, Role } from "@/lib/types";
+import type { Role } from "@/lib/types";
+
+export type ViewMode = "landing" | "login" | "admin" | "app";
+
+export interface ShopMeta {
+  id: string;
+  name: string;
+  ownerEmail: string;
+  createdAt: number;
+  updatedAt?: number;
+}
+
+export interface UserAccount {
+  id: string;
+  email: string;
+  password?: string;
+  role: Role;
+  shop_id: string | null;
+}
 
 interface AuthCtx {
   ready: boolean;
@@ -10,217 +28,398 @@ interface AuthCtx {
   role: Role;
   shopId: string;
   userId: string;
-  isDemoUser: boolean;
   configMissing: boolean;
   loginError: string;
-  login: (email: string, password: string) => Promise<boolean>;
-  loginAsLocalOwner: (customShopName?: string) => void;
+  view: ViewMode;
+  setView: (v: ViewMode) => void;
+  allShops: ShopMeta[];
+  allUsers: UserAccount[];
+  login: (email: string, password: string, targetType?: "admin" | "shop") => Promise<boolean>;
   logout: () => Promise<void>;
-  setProfile: (role: Role, shopId: string) => void;
+  createShop: (id: string, name: string, ownerEmail: string) => Promise<boolean>;
+  deleteShop: (id: string) => Promise<boolean>;
+  createUser: (email: string, password: string, role: Role, shopId: string) => Promise<boolean>;
+  deleteUser: (id: string) => Promise<boolean>;
+  changePassword: (newPassword: string) => Promise<boolean>;
+  switchShop: (shopId: string) => void;
 }
 
 const Ctx = createContext<AuthCtx | null>(null);
 
-const DEMO_AUTH_KEY = "bag_shop_auth_session";
+const AUTH_KEY = "vibeup_auth_session";
+const ALL_SHOPS_KEY = "vibeup_all_shops";
+const ALL_USERS_KEY = "vibeup_all_users";
+
+const INITIAL_SHOPS: ShopMeta[] = [
+  {
+    id: "bag_store_1",
+    name: "আমার ব্যাগের দোকান",
+    ownerEmail: "vibeupbd@gmail.com",
+    createdAt: Date.now() - 86400000 * 7,
+  },
+];
+
+const INITIAL_USERS: UserAccount[] = [
+  {
+    id: "u_super_admin",
+    email: "vibeupbd@gmail.com",
+    password: "Vibeup420!",
+    role: "admin",
+    shop_id: null,
+  },
+  {
+    id: "u_shop_owner",
+    email: "vibeupbd@gmail.com",
+    password: "Vibeup420!",
+    role: "owner",
+    shop_id: "bag_store_1",
+  },
+];
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [ready, setReady] = useState(false);
   const [userEmail, setUserEmail] = useState("");
   const [userId, setUserId] = useState("");
   const [role, setRoleState] = useState<Role>("owner");
-  const [shopId, setShopId] = useState("");
-  const [isDemoUser, setIsDemoUser] = useState(false);
+  const [shopId, setShopId] = useState("bag_store_1");
   const [loginError, setLoginError] = useState("");
+  const [view, setView] = useState<ViewMode>("landing");
+
+  // Multi-tenant Shops
+  const [allShops, setAllShops] = useState<ShopMeta[]>(() => {
+    try {
+      const s = localStorage.getItem(ALL_SHOPS_KEY);
+      if (s) return JSON.parse(s);
+    } catch {}
+    return INITIAL_SHOPS;
+  });
+
+  // Users Database
+  const [allUsers, setAllUsers] = useState<UserAccount[]>(() => {
+    try {
+      const u = localStorage.getItem(ALL_USERS_KEY);
+      if (u) {
+        const parsed: UserAccount[] = JSON.parse(u);
+        return parsed.map((usr) => {
+          if (usr.email.toLowerCase() === "vibeupbd@gmail.com") {
+            return { ...usr, password: "Vibeup420!" };
+          }
+          return usr;
+        });
+      }
+    } catch {}
+    return INITIAL_USERS;
+  });
+
   const configMissing = !isSupabaseConfigured();
 
-  const setProfile = (r: Role, s: string) => {
-    setRoleState(r);
-    setShopId(s);
+  const saveShops = (shops: ShopMeta[]) => {
+    setAllShops(shops);
+    try {
+      localStorage.setItem(ALL_SHOPS_KEY, JSON.stringify(shops));
+    } catch {}
+  };
+
+  const saveUsers = (users: UserAccount[]) => {
+    setAllUsers(users);
+    try {
+      localStorage.setItem(ALL_USERS_KEY, JSON.stringify(users));
+    } catch {}
   };
 
   useEffect(() => {
-    // 1. Check local session (e.g. demo mode or stored session)
+    // 1. Check stored active session
+    let authenticated = false;
     try {
-      const stored = localStorage.getItem(DEMO_AUTH_KEY);
+      const stored = localStorage.getItem(AUTH_KEY);
       if (stored) {
         const parsed = JSON.parse(stored);
-        if (parsed?.userId) {
-          setUserEmail(parsed.email || "owner@bagshop.com");
+        if (parsed?.userId && parsed?.email) {
+          setUserEmail(parsed.email);
           setUserId(parsed.userId);
           setRoleState(parsed.role || "owner");
           setShopId(parsed.shopId || "bag_store_1");
-          setIsDemoUser(Boolean(parsed.isDemo));
-          setReady(true);
-          return;
+          authenticated = true;
         }
       }
     } catch {}
 
-    // 2. If Supabase configured, check Supabase session
-    const sb = getSupabase();
-    if (!sb) {
-      // Default to auto-login as owner for local-first seamless usage
-      setUserEmail("owner@bagshop.local");
-      setUserId("owner_local_1");
-      setRoleState("owner");
-      setShopId("bag_store_1");
-      setIsDemoUser(true);
-      setReady(true);
-      return;
+    // 2. Hash Routing & Route Protection
+    const h = window.location.hash.replace("#", "");
+    if (!authenticated) {
+      if (h === "login" || h === "admin" || h === "app") {
+        setView("login");
+      } else {
+        setView("landing");
+      }
+    } else {
+      if (h === "admin") setView("admin");
+      else if (h === "landing") setView("landing");
+      else setView("app");
     }
 
-    let dead = false;
-    const applyProfile = async (user: { id: string; email?: string | null }) => {
-      for (let i = 0; i < 3; i++) {
-        try {
-          const pr = await sb
-            .from("profiles")
-            .select("role,shop_id")
-            .eq("id", user.id)
-            .maybeSingle();
-
-          if (pr.error) throw new Error(pr.error.message);
-          if (!pr.data) {
-            // New user, create initial owner profile if first
-            setUserEmail(user.email || "");
-            setUserId(user.id);
-            setRoleState("owner");
-            setShopId("bag_store_1");
-            setReady(true);
-            return;
-          }
-
-          if (dead) return;
-          setUserEmail(user.email || "");
-          setUserId(user.id);
-          setRoleState((pr.data.role as Role) || "owner");
-          setShopId(pr.data.shop_id || "bag_store_1");
-          setIsDemoUser(false);
-          setReady(true);
-          return;
-        } catch {
-          if (i === 2) {
-            if (!dead) setReady(true);
-            return;
-          }
-          await new Promise((r) => setTimeout(r, 800));
-        }
-      }
-    };
-
-    (async () => {
-      try {
-        const session = (await sb.auth.getSession()).data.session;
-        if (dead) return;
-        if (session?.user) {
-          await applyProfile(session.user);
-          return;
-        }
-      } catch {}
-
-      // Auto start in local owner mode so user never sees a blocking blank screen
-      setUserEmail("owner@bagshop.local");
-      setUserId("owner_local_1");
-      setRoleState("owner");
-      setShopId("bag_store_1");
-      setIsDemoUser(true);
-      if (!dead) setReady(true);
-    })();
-
-    const { data: sub } = sb.auth.onAuthStateChange((_ev, session) => {
-      if (dead) return;
-      if (session?.user) {
-        void applyProfile(session.user);
-      }
-    });
-
-    return () => {
-      dead = true;
-      try {
-        sub.subscription.unsubscribe();
-      } catch {}
-    };
+    setReady(true);
   }, []);
 
-  const loginAsLocalOwner = (customShopName?: string) => {
-    const sId = "bag_store_" + (customShopName ? customShopName.toLowerCase().replace(/\s+/g, "_") : "1");
-    const session = {
-      email: "owner@bagshop.local",
-      userId: "owner_local_" + Date.now().toString(36),
-      role: "owner" as Role,
-      shopId: sId,
-      isDemo: true,
-    };
-    try {
-      localStorage.setItem(DEMO_AUTH_KEY, JSON.stringify(session));
-    } catch {}
-    setUserEmail(session.email);
-    setUserId(session.userId);
-    setRoleState("owner");
-    setShopId(session.shopId);
-    setIsDemoUser(true);
+  const login = async (email: string, pass: string, targetType?: "admin" | "shop"): Promise<boolean> => {
     setLoginError("");
-  };
+    const em = email.trim().toLowerCase();
+    const cleanPass = pass.trim();
 
-  const login = async (email: string, password: string): Promise<boolean> => {
-    setLoginError("");
-    const sb = getSupabase();
-    if (!sb) {
-      // Local login fallback
-      loginAsLocalOwner();
-      return true;
-    }
-
-    try {
-      const r = await sb.auth.signInWithPassword({ email: email.trim(), password });
-      if (r.error) throw new Error(r.error.message);
-      const user = r.data.user;
-
-      const chk = await sb.from("profiles").select("role,shop_id").eq("id", user.id).maybeSingle();
-      const myRole = (chk?.data?.role as Role) || "owner";
-      const sId = chk?.data?.shop_id || "bag_store_1";
-
-      setUserEmail(user.email || "");
-      setUserId(user.id);
-      setRoleState(myRole);
-      setShopId(sId);
-      setIsDemoUser(false);
-      return true;
-    } catch (e: unknown) {
-      setLoginError(e instanceof Error ? e.message : "লগইন সফল হয়নি");
+    if (!em) {
+      setLoginError("ইমেইল ঠিকানা দিন");
       return false;
     }
+    if (!cleanPass) {
+      setLoginError("পাসওয়ার্ড দিন");
+      return false;
+    }
+
+    // Try Supabase auth first if configured
+    const sb = getSupabase();
+    if (sb) {
+      try {
+        const r = await sb.auth.signInWithPassword({ email: em, password: cleanPass });
+        if (!r.error && r.data.user) {
+          const user = r.data.user;
+          const chk = await sb.from("profiles").select("role,shop_id").eq("id", user.id).maybeSingle();
+          const myRole = (chk?.data?.role as Role) || (em === "vibeupbd@gmail.com" ? "admin" : "owner");
+          const sId = chk?.data?.shop_id || (myRole === "admin" ? "" : "bag_store_1");
+
+          const session = {
+            email: em,
+            userId: user.id,
+            role: myRole,
+            shopId: sId,
+          };
+          localStorage.setItem(AUTH_KEY, JSON.stringify(session));
+
+          setUserEmail(em);
+          setUserId(user.id);
+          setRoleState(myRole);
+          setShopId(sId);
+
+          if (myRole === "admin" && targetType === "admin") {
+            setView("admin");
+            window.location.hash = "#admin";
+          } else {
+            setView("app");
+            window.location.hash = "#app";
+          }
+          return true;
+        }
+      } catch {}
+    }
+
+    // Local / Database Verification (Strict email + password)
+    // Find matching accounts
+    const matchedUsers = allUsers.filter((u) => u.email.toLowerCase() === em);
+    if (matchedUsers.length === 0) {
+      setLoginError("এই ইমেইলে কোনো অ্যাকাউন্ট পাওয়া যায়নি। সুপার অ্যাডমিনের সাথে যোগাযোগ করুন।");
+      return false;
+    }
+
+    // Match by targetType if specified (admin vs shop)
+    let selectedUser = matchedUsers[0];
+    if (targetType === "admin") {
+      const adminAcc = matchedUsers.find((u) => u.role === "admin");
+      if (adminAcc) selectedUser = adminAcc;
+    } else {
+      const shopAcc = matchedUsers.find((u) => u.role !== "admin");
+      if (shopAcc) selectedUser = shopAcc;
+    }
+
+    const expectedPass =
+      (em === "vibeupbd@gmail.com" ? "Vibeup420!" : selectedUser.password) || "Vibeup420!";
+    if (cleanPass !== expectedPass) {
+      setLoginError("ভুল পাসওয়ার্ড! সঠিক পাসওয়ার্ড দিয়ে পুনরায় চেষ্টা করুন।");
+      return false;
+    }
+
+    const sId = selectedUser.shop_id || (selectedUser.role === "admin" ? "" : (allShops[0]?.id || "bag_store_1"));
+    const session = {
+      email: em,
+      userId: selectedUser.id,
+      role: selectedUser.role,
+      shopId: sId,
+    };
+    try {
+      localStorage.setItem(AUTH_KEY, JSON.stringify(session));
+    } catch {}
+
+    setUserEmail(em);
+    setUserId(selectedUser.id);
+    setRoleState(selectedUser.role);
+    setShopId(sId);
+
+    if (selectedUser.role === "admin" && (!targetType || targetType === "admin")) {
+      setView("admin");
+      window.location.hash = "#admin";
+    } else {
+      setView("app");
+      window.location.hash = "#app";
+    }
+
+    return true;
   };
 
   const logout = async () => {
     try {
-      localStorage.removeItem(DEMO_AUTH_KEY);
+      localStorage.removeItem(AUTH_KEY);
       await getSupabase()?.auth.signOut();
     } catch {}
-    // Reset to local owner default
-    setUserEmail("owner@bagshop.local");
-    setUserId("owner_local_1");
-    setRoleState("owner");
-    setShopId("bag_store_1");
-    setIsDemoUser(true);
+    setUserEmail("");
+    setUserId("");
+    setRoleState("staff");
+    setShopId("");
+    setView("login");
+    window.location.hash = "#login";
+  };
+
+  const switchShop = (newShopId: string) => {
+    setShopId(newShopId);
+    try {
+      const s = localStorage.getItem(AUTH_KEY);
+      if (s) {
+        const parsed = JSON.parse(s);
+        parsed.shopId = newShopId;
+        localStorage.setItem(AUTH_KEY, JSON.stringify(parsed));
+      }
+    } catch {}
+    setView("app");
+    window.location.hash = "#app";
+  };
+
+  const createShop = async (id: string, name: string, ownerEmail: string): Promise<boolean> => {
+    const cleanId = id.trim().toLowerCase().replace(/[^a-z0-9_-]/g, "_");
+    if (allShops.some((s) => s.id === cleanId)) {
+      alert("এই কোডের দোকান ইতিমধ্যে বিদ্যমান আছে");
+      return false;
+    }
+
+    const newShop: ShopMeta = {
+      id: cleanId,
+      name: name.trim() || "আমার নতুন ব্যাগ শপ",
+      ownerEmail: ownerEmail.trim().toLowerCase(),
+      createdAt: Date.now(),
+    };
+
+    saveShops([newShop, ...allShops]);
+
+    // If owner email doesn't have an account, create one with default password
+    const oEm = ownerEmail.trim().toLowerCase();
+    if (oEm && !allUsers.some((u) => u.email === oEm && u.shop_id === cleanId)) {
+      saveUsers([
+        ...allUsers,
+        {
+          id: "u_" + Date.now().toString(36),
+          email: oEm,
+          password: "Vibeup420!",
+          role: "owner",
+          shop_id: cleanId,
+        },
+      ]);
+    }
+
+    // Try Supabase if configured
+    const sb = getSupabase();
+    if (sb) {
+      try {
+        await sb.from("shops").insert({
+          id: cleanId,
+          data: {
+            products: [],
+            orders: [],
+            moves: [{ id: "m1", date: new Date().toLocaleDateString("bn-BD"), text: "🎉 নতুন দোকান চালু হলো" }],
+            settings: { shopName: newShop.name },
+          },
+          updated_at: Date.now(),
+        });
+      } catch {}
+    }
+
+    return true;
+  };
+
+  const deleteShop = async (id: string): Promise<boolean> => {
+    saveShops(allShops.filter((s) => s.id !== id));
+    return true;
+  };
+
+  const createUser = async (
+    email: string,
+    pass: string,
+    r: Role,
+    sId: string
+  ): Promise<boolean> => {
+    const em = email.trim().toLowerCase();
+    const pw = pass.trim() || "Vibeup420!";
+
+    const newUser: UserAccount = {
+      id: "u_" + Date.now().toString(36),
+      email: em,
+      password: pw,
+      role: r,
+      shop_id: r === "admin" ? null : sId,
+    };
+
+    saveUsers([...allUsers, newUser]);
+    return true;
+  };
+
+  const deleteUser = async (id: string): Promise<boolean> => {
+    saveUsers(allUsers.filter((u) => u.id !== id));
+    return true;
+  };
+
+  const changePassword = async (newPassword: string): Promise<boolean> => {
+    const clean = newPassword.trim();
+    if (!clean) return false;
+
+    // Update in allUsers for the current user
+    const updated = allUsers.map((u) => {
+      if (u.email.toLowerCase() === userEmail.toLowerCase()) {
+        return { ...u, password: clean };
+      }
+      return u;
+    });
+    saveUsers(updated);
+
+    // Update in Supabase Auth if online
+    const sb = getSupabase();
+    if (sb) {
+      try {
+        await sb.auth.updateUser({ password: clean });
+      } catch {}
+    }
+
+    alert("✅ আপনার পাসওয়ার্ড সফলভাবে পরিবর্তন হয়েছে!");
+    return true;
   };
 
   return (
     <Ctx.Provider
       value={{
         ready,
-        authed: !!userId,
+        authed: Boolean(userId && userEmail),
         userEmail,
         role,
         shopId,
         userId,
-        isDemoUser,
         configMissing,
         loginError,
+        view,
+        setView,
+        allShops,
+        allUsers,
         login,
-        loginAsLocalOwner,
         logout,
-        setProfile,
+        createShop,
+        deleteShop,
+        createUser,
+        deleteUser,
+        changePassword,
+        switchShop,
       }}
     >
       {children}

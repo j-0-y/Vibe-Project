@@ -3,13 +3,12 @@ import React, { useEffect, useState } from "react";
 import { useShop } from "@/hooks/useShop";
 import { useAuth } from "@/hooks/useAuth";
 import { steadApi } from "@/lib/api";
-import { DEFAULT_SHIP, type Zone } from "@/lib/utils";
 import { resetSupabaseClient, SUPABASE_SQL_SCHEMA } from "@/lib/supabase";
 import { Btn, Card, inputCls, Field } from "@/components/ui";
 
 export default function SetupTab() {
-  const { db, mutate, pushNow, cloudMsg, resetToDemoData } = useShop();
-  const { role, userEmail, shopId, logout } = useAuth();
+  const { db, mutateAndSync, pushNow, cloudMsg, resetToDemoData, notify } = useShop();
+  const { role, userEmail, shopId, logout, setView } = useAuth();
 
   // Shop Name & FX Rate
   const [shopName, setShopName] = useState(db.settings?.shopName || "আমার ব্যাগের দোকান");
@@ -24,18 +23,46 @@ export default function SetupTab() {
   const [sfBalance, setSfBalance] = useState<string | null>(null);
   const [checkingBalance, setCheckingBalance] = useState(false);
 
-  // Delivery Charges
+  // Delivery Charges (Customer Fee & Courier Cost)
   const [insideFee, setInsideFee] = useState((db.settings?.ship?.inside?.fee ?? 80).toString());
+  const [insideCost, setInsideCost] = useState((db.settings?.ship?.inside?.cost ?? 80).toString());
   const [subFee, setSubFee] = useState((db.settings?.ship?.sub?.fee ?? 100).toString());
+  const [subCost, setSubCost] = useState((db.settings?.ship?.sub?.cost ?? 100).toString());
   const [outsideFee, setOutsideFee] = useState((db.settings?.ship?.outside?.fee ?? 130).toString());
+  const [outsideCost, setOutsideCost] = useState((db.settings?.ship?.outside?.cost ?? 115).toString());
 
   // Supabase Credentials
   const [sbUrl, setSbUrl] = useState(db.settings?.supabase?.url || "");
   const [sbAnonKey, setSbAnonKey] = useState(db.settings?.supabase?.anonKey || "");
   const [copiedSql, setCopiedSql] = useState(false);
+  const [isSaving, setIsSaving] = useState(false);
 
+  // Sync state whenever db.settings updates (e.g. from cloud or reload)
   useEffect(() => {
-    // Load stored steadfast creds if present
+    if (db.settings) {
+      if (db.settings.shopName) setShopName(db.settings.shopName);
+      if (db.settings.fxRate) setFxRate(db.settings.fxRate.toString());
+      if (db.settings.ship?.inside) {
+        setInsideFee((db.settings.ship.inside.fee ?? 80).toString());
+        setInsideCost((db.settings.ship.inside.cost ?? 80).toString());
+      }
+      if (db.settings.ship?.sub) {
+        setSubFee((db.settings.ship.sub.fee ?? 100).toString());
+        setSubCost((db.settings.ship.sub.cost ?? 100).toString());
+      }
+      if (db.settings.ship?.outside) {
+        setOutsideFee((db.settings.ship.outside.fee ?? 130).toString());
+        setOutsideCost((db.settings.ship.outside.cost ?? 115).toString());
+      }
+      if (db.settings.steadfast?.key) setSfKey(db.settings.steadfast.key);
+      if (db.settings.steadfast?.secret) setSfSecret(db.settings.steadfast.secret);
+      if (db.settings.supabase?.url) setSbUrl(db.settings.supabase.url);
+      if (db.settings.supabase?.anonKey) setSbAnonKey(db.settings.supabase.anonKey);
+    }
+  }, [db.settings]);
+
+  // Load stored steadfast creds if present
+  useEffect(() => {
     try {
       const l = JSON.parse(localStorage.getItem("steadfast_creds") || "{}");
       if (l.key && !sfKey) setSfKey(l.key);
@@ -44,6 +71,7 @@ export default function SetupTab() {
   }, []);
 
   const saveSettings = async () => {
+    const cleanName = shopName.trim() || "আমার ব্যাগের দোকান";
     const steadfast = {
       key: sfKey.trim(),
       secret: sfSecret.trim(),
@@ -59,25 +87,25 @@ export default function SetupTab() {
       anonKey: sbAnonKey.trim(),
     };
 
-    mutate((d) => {
+    setIsSaving(true);
+
+    await mutateAndSync((d) => {
       d.settings = d.settings || {};
-      d.settings.shopName = shopName.trim();
+      d.settings.shopName = cleanName;
       d.settings.fxRate = +fxRate || 130;
       d.settings.steadfast = steadfast;
       d.settings.supabase = supabase;
       d.settings.ship = {
-        inside: { cost: 80, fee: +insideFee || 80 },
-        sub: { cost: 100, fee: +subFee || 100 },
-        outside: { cost: 115, fee: +outsideFee || 130 },
+        inside: { cost: +insideCost || 80, fee: +insideFee || 80 },
+        sub: { cost: +subCost || 100, fee: +subFee || 100 },
+        outside: { cost: +outsideCost || 115, fee: +outsideFee || 130 },
       };
     });
 
     resetSupabaseClient();
-    setTimeout(() => {
-      void pushNow();
-    }, 300);
-
-    alert("✅ সেটিংস সফলভাবে সংরক্ষিত হয়েছে!");
+    setIsSaving(false);
+    notify("সেটিংস সংরক্ষিত!", `দোকানের নাম "${cleanName}" ও ডেলিভারি চার্জ সফলভাবে আপডেট হয়েছে।`);
+    alert("✅ সমস্ত সেটিংস সফলভাবে সংরক্ষিত হয়েছে!");
   };
 
   const checkSteadfastBalance = async () => {
@@ -90,7 +118,7 @@ export default function SetupTab() {
       } else {
         setSfBalance("ব্যালেন্স পাওয়া যায়নি");
       }
-    } catch (e: unknown) {
+    } catch {
       setSfBalance("সংযোগ সমস্যা");
     } finally {
       setCheckingBalance(false);
@@ -117,18 +145,26 @@ export default function SetupTab() {
 
   return (
     <div className="space-y-4 pb-12">
-      <h2 className="text-lg font-black text-stone-900 flex items-center gap-1.5">
-        ⚙️ দোকান ও সিস্টেম সেটিংস
-      </h2>
+      <div className="flex items-center justify-between">
+        <h2 className="text-lg font-black text-stone-900 flex items-center gap-1.5">
+          ⚙️ দোকান ও সিস্টেম সেটিংস
+        </h2>
+        <button
+          onClick={() => setView("admin")}
+          className="text-xs font-bold text-amber-900 hover:underline cursor-pointer"
+        >
+          👑 অ্যাডমিন প্যানেল
+        </button>
+      </div>
 
       {/* Account and Cloud Status */}
       <Card>
         <div className="flex items-center justify-between border-b border-stone-100 pb-2.5 mb-2.5">
           <div>
             <div className="text-xs text-stone-500">বর্তমান অ্যাকাউন্ট:</div>
-            <div className="font-black text-stone-900 text-sm">{userEmail}</div>
+            <div className="font-black text-stone-900 text-sm">{userEmail || "owner@bagshop.com"}</div>
             <div className="text-[11px] text-amber-900 font-bold mt-0.5">
-              ভূমিকা: {role === "owner" ? "দোকানের মালিক (Owner)" : "স্টাফ (Staff)"}
+              দোকান ID: <code className="bg-amber-50 px-1 py-0.5 rounded border border-amber-200">{shopId || "bag_store_1"}</code>
             </div>
           </div>
           <div className="text-right">
@@ -142,7 +178,7 @@ export default function SetupTab() {
           </div>
         </div>
 
-        <Field label="দোকানের নাম">
+        <Field label="দোকানের নাম (Header ও স্লিপে দেখাবে) *" hint="নাম পরিবর্তন করে নিচে সেভ চাপুন">
           <input
             className={inputCls}
             value={shopName}
@@ -150,6 +186,102 @@ export default function SetupTab() {
             placeholder="যেমন: আমার ব্যাগের দোকান"
           />
         </Field>
+      </Card>
+
+      {/* Delivery Charges (Both Customer Charge & Courier Cost) */}
+      <Card>
+        <h3 className="font-bold text-stone-900 text-sm mb-1 flex items-center gap-1.5">
+          📦 কাস্টমার ডেলিভারি চার্জ ও কুরিয়ার খরচ
+        </h3>
+        <p className="text-xs text-stone-500 mb-3">
+          অর্ডার তৈরি করার সময় এই রেট স্বয়ংক্রিয়ভাবে জোন অনুযায়ী যোগ হবে।
+        </p>
+
+        {/* Inside Dhaka */}
+        <div className="bg-stone-50 p-2.5 rounded-xl border border-stone-200 mb-2.5">
+          <span className="font-bold text-xs text-stone-800 block mb-1.5">
+            📍 ঢাকার ভেতর (Inside Dhaka)
+          </span>
+          <div className="grid grid-cols-2 gap-2">
+            <Field label="কাস্টমার চার্জ (৳)">
+              <input
+                type="number"
+                className={inputCls}
+                value={insideFee}
+                onChange={(e) => setInsideFee(e.target.value)}
+              />
+            </Field>
+            <Field label="কুরিয়ার খরচ (৳)">
+              <input
+                type="number"
+                className={inputCls}
+                value={insideCost}
+                onChange={(e) => setInsideCost(e.target.value)}
+              />
+            </Field>
+          </div>
+        </div>
+
+        {/* Sub Dhaka */}
+        <div className="bg-stone-50 p-2.5 rounded-xl border border-stone-200 mb-2.5">
+          <span className="font-bold text-xs text-stone-800 block mb-1.5">
+            📍 সাব-ঢাকা (সাভার, গাজীপুর, টঙ্গী, নারায়ণগঞ্জ ইত্যাদি)
+          </span>
+          <div className="grid grid-cols-2 gap-2">
+            <Field label="কাস্টমার চার্জ (৳)">
+              <input
+                type="number"
+                className={inputCls}
+                value={subFee}
+                onChange={(e) => setSubFee(e.target.value)}
+              />
+            </Field>
+            <Field label="কুরিয়ার খরচ (৳)">
+              <input
+                type="number"
+                className={inputCls}
+                value={subCost}
+                onChange={(e) => setSubCost(e.target.value)}
+              />
+            </Field>
+          </div>
+        </div>
+
+        {/* Outside Dhaka */}
+        <div className="bg-stone-50 p-2.5 rounded-xl border border-stone-200 mb-2.5">
+          <span className="font-bold text-xs text-stone-800 block mb-1.5">
+            📍 ঢাকার বাইরে (অন্যান্য ৬৩ জেলা)
+          </span>
+          <div className="grid grid-cols-2 gap-2">
+            <Field label="কাস্টমার চার্জ (৳)">
+              <input
+                type="number"
+                className={inputCls}
+                value={outsideFee}
+                onChange={(e) => setOutsideFee(e.target.value)}
+              />
+            </Field>
+            <Field label="কুরিয়ার খরচ (৳)">
+              <input
+                type="number"
+                className={inputCls}
+                value={outsideCost}
+                onChange={(e) => setOutsideCost(e.target.value)}
+              />
+            </Field>
+          </div>
+        </div>
+
+        <div className="mt-2">
+          <Field label="ফেসবুক অ্যাড ডলার রেট (BDT/USD)" hint="১ ডলারে কত টাকা খরচ হয়">
+            <input
+              type="number"
+              className={inputCls}
+              value={fxRate}
+              onChange={(e) => setFxRate(e.target.value)}
+            />
+          </Field>
+        </div>
       </Card>
 
       {/* Steadfast Courier Settings */}
@@ -197,50 +329,6 @@ export default function SetupTab() {
         </div>
       </Card>
 
-      {/* Delivery Charges */}
-      <Card>
-        <h3 className="font-bold text-stone-900 text-sm mb-2 flex items-center gap-1.5">
-          📦 কাস্টমার ডেলিভারি চার্জ (টাকায়)
-        </h3>
-        <div className="grid grid-cols-3 gap-2">
-          <Field label="ঢাকার ভেতর (৳)">
-            <input
-              type="number"
-              className={inputCls}
-              value={insideFee}
-              onChange={(e) => setInsideFee(e.target.value)}
-            />
-          </Field>
-          <Field label="সাব-ঢাকা (৳)">
-            <input
-              type="number"
-              className={inputCls}
-              value={subFee}
-              onChange={(e) => setSubFee(e.target.value)}
-            />
-          </Field>
-          <Field label="ঢাকার বাইরে (৳)">
-            <input
-              type="number"
-              className={inputCls}
-              value={outsideFee}
-              onChange={(e) => setOutsideFee(e.target.value)}
-            />
-          </Field>
-        </div>
-
-        <div className="mt-2">
-          <Field label="ফেসবুক অ্যাড ডলার রেট (BDT/USD)" hint="১ ডলারে কত টাকা খরচ হয়">
-            <input
-              type="number"
-              className={inputCls}
-              value={fxRate}
-              onChange={(e) => setFxRate(e.target.value)}
-            />
-          </Field>
-        </div>
-      </Card>
-
       {/* Supabase Integration Configuration */}
       <Card>
         <div className="flex items-center justify-between mb-2">
@@ -276,8 +364,8 @@ export default function SetupTab() {
       </Card>
 
       {/* Save Settings Button */}
-      <Btn color="amber" onClick={saveSettings}>
-        💾 সমস্ত সেটিংস সেভ করুন
+      <Btn color="amber" onClick={saveSettings} disabled={isSaving}>
+        {isSaving ? "সংরক্ষিত হচ্ছে..." : "💾 সমস্ত সেটিংস সেভ করুন"}
       </Btn>
 
       {/* Backup and Data Reset */}
@@ -292,20 +380,9 @@ export default function SetupTab() {
         >
           ⬇️ GitHub এর জন্য রেডিমেড ZIP ডাউনলোড (.zip)
         </a>
-        <div className="grid grid-cols-2 gap-2">
+        <div className="w-full">
           <Btn small color="gray" onClick={exportBackup}>
-            📥 ব্যাকআপ ডাউনলোড (JSON)
-          </Btn>
-          <Btn
-            small
-            color="red"
-            onClick={() => {
-              if (confirm("আপনি কি নিশ্চিত ডেমো ব্যাগের ডেটা রিলোড করতে চান?")) {
-                resetToDemoData();
-              }
-            }}
-          >
-            ⚠️ ডেমো ডেটা রিলোড
+            📥 সম্পূর্ণ ব্যাকআপ ডাউনলোড করুন (JSON)
           </Btn>
         </div>
       </Card>

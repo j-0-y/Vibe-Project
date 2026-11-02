@@ -374,7 +374,7 @@ function CreateOrderModal({ onClose }: { onClose: () => void }) {
               className={inputCls}
               placeholder="01712345678"
               value={phone}
-              onChange={(e) => setPhone(e.target.value)}
+              onChange={(e) => setPhone(toEnDigits(e.target.value))}
             />
           </div>
         </div>
