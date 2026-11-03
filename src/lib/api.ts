@@ -50,8 +50,29 @@ export async function steadApi(
   if (creds.secret) headers["x-steadfast-secret"] = creds.secret;
   if (creds.base) headers["x-steadfast-base"] = creds.base;
 
+function extractSteadfastErrorMessage(errObj: any, fallbackStatus = 0): string {
+  if (!errObj) return fallbackStatus ? `HTTP ${fallbackStatus}` : "অজানা সমস্যা";
+  if (typeof errObj === "string") {
+    try {
+      errObj = JSON.parse(errObj);
+    } catch {
+      return errObj.slice(0, 150);
+    }
+  }
+  if (errObj.errors && typeof errObj.errors === "object") {
+    const list: string[] = [];
+    for (const [, val] of Object.entries(errObj.errors)) {
+      if (Array.isArray(val)) list.push(...val.map(String));
+      else if (typeof val === "string") list.push(val);
+    }
+    if (list.length) return list.join(", ");
+  }
+  return errObj.message || errObj.error || (fallbackStatus ? `HTTP ${fallbackStatus}` : "ত্রুটি ঘটেছে");
+}
+
+  const cleanSub = endpoint.replace(/^\//, "");
+
   try {
-    const cleanSub = endpoint.replace(/^\//, "");
     const r = await fetch(`/api/steadfast/${cleanSub}`, {
       method,
       headers,
@@ -59,21 +80,41 @@ export async function steadApi(
     });
 
     if (!r.ok) {
-      const errTxt = await r.text();
-      let parsedErr = "";
-      try {
-        const j = JSON.parse(errTxt);
-        parsedErr = j.message || j.error || j.errors?.join?.(", ") || "";
-      } catch {
-        parsedErr = errTxt.slice(0, 150);
+      // If proxy returned 405 or failed, and merchant has keys, try direct Steadfast API (supports CORS)
+      if (creds.key && creds.secret) {
+        try {
+          const directBase = (creds.base || "https://portal.packzy.com/api/v1").replace(/\/$/, "");
+          const directResp = await fetch(`${directBase}/${cleanSub}`, {
+            method,
+            headers: {
+              "Content-Type": "application/json",
+              Accept: "application/json",
+              "Api-Key": creds.key,
+              "Secret-Key": creds.secret,
+            },
+            body: method === "POST" ? JSON.stringify(body || {}) : undefined,
+          });
+
+          if (directResp.ok) {
+            return await directResp.json();
+          } else {
+            const directErrText = await directResp.text();
+            lastError = extractSteadfastErrorMessage(directErrText, directResp.status);
+            if (!silent) console.warn("[Steadfast Direct API]", lastError);
+            return null;
+          }
+        } catch (directErr: any) {
+          console.warn("[Steadfast Direct Fallback Failed]", directErr);
+        }
       }
 
-      // If missing keys and mock mode or no keys set, simulate for non-technical user preview!
+      const errTxt = await r.text();
+      // If missing keys, simulate for smooth preview
       if (!creds.key || !creds.secret) {
         return mockSteadfastResponse(endpoint, method, body);
       }
 
-      lastError = parsedErr || `HTTP ${r.status}`;
+      lastError = extractSteadfastErrorMessage(errTxt, r.status);
       if (!silent) console.warn("[Steadfast API]", lastError);
       return null;
     }
@@ -81,7 +122,28 @@ export async function steadApi(
     const json = await r.json();
     return json;
   } catch (err: unknown) {
-    // If server proxy unreachable in dev preview, simulate for user
+    // If proxy failed, try direct Steadfast API if keys are present
+    if (creds.key && creds.secret) {
+      try {
+        const directBase = (creds.base || "https://portal.packzy.com/api/v1").replace(/\/$/, "");
+        const directResp = await fetch(`${directBase}/${cleanSub}`, {
+          method,
+          headers: {
+            "Content-Type": "application/json",
+            Accept: "application/json",
+            "Api-Key": creds.key,
+            "Secret-Key": creds.secret,
+          },
+          body: method === "POST" ? JSON.stringify(body || {}) : undefined,
+        });
+        if (directResp.ok) return await directResp.json();
+        const directErrText = await directResp.text();
+        lastError = extractSteadfastErrorMessage(directErrText, directResp.status);
+        if (!silent) console.warn("[Steadfast Direct API]", lastError);
+        return null;
+      } catch {}
+    }
+
     if (!creds.key || !creds.secret) {
       return mockSteadfastResponse(endpoint, method, body);
     }

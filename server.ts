@@ -30,9 +30,20 @@ async function main() {
   // /api/steadfast/* -> portal.packzy.com/api/v1/*
   app.all("/api/steadfast/*", async (req, res) => {
     const subPath = ((req.params as unknown as Record<string, string>)["0"]) || "";
-    const key = (req.headers["x-steadfast-key"] as string) || process.env.STEADFAST_API_KEY || "";
-    const secret = (req.headers["x-steadfast-secret"] as string) || process.env.STEADFAST_SECRET_KEY || "";
+    let key = (req.headers["x-steadfast-key"] as string) || process.env.STEADFAST_API_KEY || "";
+    let secret = (req.headers["x-steadfast-secret"] as string) || process.env.STEADFAST_SECRET_KEY || "";
     const base = ((req.headers["x-steadfast-base"] as string) || process.env.STEADFAST_BASE_URL || "https://portal.packzy.com/api/v1").replace(/\/$/, "");
+
+    if (!key || !secret) {
+      try {
+        const cfgPath = path.join(path.resolve(__dirname, "data"), "config.json");
+        if (fs.existsSync(cfgPath)) {
+          const cfg = JSON.parse(fs.readFileSync(cfgPath, "utf-8"));
+          if (cfg?.steadfast?.key) key = cfg.steadfast.key;
+          if (cfg?.steadfast?.secret) secret = cfg.steadfast.secret;
+        }
+      } catch {}
+    }
 
     // If no credentials configured yet, simulate gracefully for non-technical user preview!
     if (!key || !secret) {
@@ -274,20 +285,55 @@ async function main() {
     const filePath = path.join(DATA_DIR, `shop_${shopId}.json`);
     try {
       if (fs.existsSync(filePath)) {
-        return res.json({ success: true, data: JSON.parse(fs.readFileSync(filePath, "utf-8")) });
+        const parsed = JSON.parse(fs.readFileSync(filePath, "utf-8"));
+        const stat = fs.statSync(filePath);
+        const updatedAt = Number(parsed.updated_at || stat.mtimeMs || 0);
+        return res.json({ success: true, data: parsed, updatedAt });
       }
     } catch {}
-    res.json({ success: false, data: null });
+    res.json({ success: false, data: null, updatedAt: 0 });
   });
 
   app.post("/api/shop", (req, res) => {
     const shopId = (req.body?.id || "bag_store_1").toString().trim();
     const shopData = req.body?.data || req.body;
+    const now = Number(req.body?.updatedAt) || Date.now();
+    shopData.updated_at = now;
     const filePath = path.join(DATA_DIR, `shop_${shopId}.json`);
     try {
       if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true });
       fs.writeFileSync(filePath, JSON.stringify(shopData, null, 2), "utf-8");
-      res.json({ success: true, shopId, updatedAt: Date.now() });
+
+      // Sync settings if passed
+      if (shopData.settings) {
+        let cfg: any = {};
+        try {
+          if (fs.existsSync(CONFIG_FILE)) cfg = JSON.parse(fs.readFileSync(CONFIG_FILE, "utf-8"));
+        } catch {}
+        let changed = false;
+        if (shopData.settings.steadfast?.key) {
+          cfg.steadfast = shopData.settings.steadfast;
+          changed = true;
+        }
+        if (shopData.settings.bdCourierKey) {
+          cfg.bdCourierKey = shopData.settings.bdCourierKey;
+          changed = true;
+        }
+        if (shopData.settings.supabase?.url) {
+          cfg.supabase = shopData.settings.supabase;
+          changed = true;
+        }
+        if (shopData.settings.shopName) {
+          cfg.shopName = shopData.settings.shopName;
+          changed = true;
+        }
+        if (changed) {
+          cfg.updatedAt = now;
+          fs.writeFileSync(CONFIG_FILE, JSON.stringify(cfg, null, 2), "utf-8");
+        }
+      }
+
+      res.json({ success: true, shopId, updatedAt: now });
     } catch (e: any) {
       res.status(500).json({ error: e?.message || "Failed to save shop" });
     }

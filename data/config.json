@@ -1,8 +1,8 @@
 {
   "supabase": {
     "url": "https://pjmetesiswnoahwpknlg.supabase.co",
-    "anonKey": ""
+    "anonKey": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InBqbWV0ZXNpc3dub2Fod3BrbmxnIiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTM2MDA3OTgsImV4cCI6MjEwOTE3Njc5OH0.PwKAWoifw8rnSWlCC5FhDSnOar6uyzr71_kHxl__t4w"
   },
   "shopName": "আমার ব্যাগের দোকান",
-  "updatedAt": 1730526000000
+  "updatedAt": 1793724000000
 }

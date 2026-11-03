@@ -290,7 +290,7 @@ function CreateOrderModal({ onClose }: { onClose: () => void }) {
       note: note.trim(),
     };
 
-    // Auto-send to Steadfast if checked
+    // Auto-send to Steadfast if checked (Minipop workflow)
     let steadfastSuccess = false;
     if (autoSendSteadfast) {
       try {
@@ -300,6 +300,11 @@ function CreateOrderModal({ onClose }: { onClose: () => void }) {
           newOrder.trackingCode = parcelRes.tracking;
           newOrder.status = "Shipped";
           steadfastSuccess = true;
+        } else {
+          const err = steadLastError();
+          if (err) {
+            alert(`⚠️ অর্ডার তৈরি হয়েছে, তবে স্টেডফাস্টে স্বয়ংক্রিয় পার্সেল পাঠানো যায়নি: ${err}\n\nআপনি অর্ডারের পাশে '🚚 স্টেডফাস্টে পাঠান' বাটনে চাপ দিয়ে যেকোনো সময় পাঠাতে পারবেন।`);
+          }
         }
       } catch (err) {
         console.warn("Steadfast auto-send failed:", err);
@@ -316,6 +321,10 @@ function CreateOrderModal({ onClose }: { onClose: () => void }) {
         text: `📦 অর্ডার তৈরি (${orderId}): ${customer} - ${selectedItems.map((it) => `${it.productName} [${it.variantLabel}] x${it.qty}`).join(", ")}`,
       });
     });
+
+    if (steadfastSuccess) {
+      alert(`🎉 অর্ডার (${orderId}) সফলভাবে তৈরি হয়েছে এবং স্টেডফাস্ট কুরিয়ারে স্বয়ংক্রিয়ভাবে পার্সেল বুক হয়েছে!\n\nConsignment ID: ${newOrder.steadfastId}\nTracking Code: ${newOrder.trackingCode || "N/A"}`);
+    }
 
     notify(
       "নতুন অর্ডার তৈরি!",
@@ -704,6 +713,7 @@ export default function OrdersTab() {
     });
 
     notify("স্টেডফাস্ট পার্সেল তৈরি!", `${o.customer} এর পার্সেল সফলভাবে স্টেডফাস্টে পাঠানো হয়েছে। CID: ${res.cid}`);
+    alert(`✅ স্টেডফাস্ট কুরিয়ারে পার্সেল সফলভাবে বুক হয়েছে!\n\nConsignment ID: ${res.cid}\nTracking Code: ${res.tracking || "N/A"}`);
   };
 
   const copyFacebookReply = async (o: Order) => {

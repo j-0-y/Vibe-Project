@@ -3,7 +3,12 @@ import React, { useEffect, useState } from "react";
 import { useShop } from "@/hooks/useShop";
 import { useAuth } from "@/hooks/useAuth";
 import { steadApi } from "@/lib/api";
-import { resetSupabaseClient, SUPABASE_SQL_SCHEMA } from "@/lib/supabase";
+import {
+  resetSupabaseClient,
+  SUPABASE_SQL_SCHEMA,
+  PERMANENT_SUPABASE_URL,
+  PERMANENT_SUPABASE_KEY,
+} from "@/lib/supabase";
 import { createClient } from "@supabase/supabase-js";
 import { Btn, Card, inputCls, Field } from "@/components/ui";
 
@@ -32,9 +37,9 @@ export default function SetupTab() {
   const [outsideFee, setOutsideFee] = useState((db.settings?.ship?.outside?.fee ?? 130).toString());
   const [outsideCost, setOutsideCost] = useState((db.settings?.ship?.outside?.cost ?? 115).toString());
 
-  // Supabase Credentials
-  const [sbUrl, setSbUrl] = useState(db.settings?.supabase?.url || "");
-  const [sbAnonKey, setSbAnonKey] = useState(db.settings?.supabase?.anonKey || "");
+  // Supabase Credentials (permanently loaded)
+  const [sbUrl, setSbUrl] = useState(db.settings?.supabase?.url || PERMANENT_SUPABASE_URL);
+  const [sbAnonKey, setSbAnonKey] = useState(db.settings?.supabase?.anonKey || PERMANENT_SUPABASE_KEY);
   const [copiedSql, setCopiedSql] = useState(false);
   const [testingSb, setTestingSb] = useState(false);
   const [sbTestMsg, setSbTestMsg] = useState<{ text: string; ok: boolean } | null>(null);
@@ -69,8 +74,8 @@ export default function SetupTab() {
       }
       if (db.settings.steadfast?.key) setSfKey(db.settings.steadfast.key);
       if (db.settings.steadfast?.secret) setSfSecret(db.settings.steadfast.secret);
-      if (db.settings.supabase?.url) setSbUrl(db.settings.supabase.url);
-      if (db.settings.supabase?.anonKey) setSbAnonKey(db.settings.supabase.anonKey);
+      setSbUrl(db.settings.supabase?.url || PERMANENT_SUPABASE_URL);
+      setSbAnonKey(db.settings.supabase?.anonKey || PERMANENT_SUPABASE_KEY);
       if (db.settings.bdCourierKey) setBdKey(db.settings.bdCourierKey);
     }
   }, [db.settings]);
