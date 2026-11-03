@@ -137,6 +137,7 @@ export default function StockTab() {
   const [editingProduct, setEditingProduct] = useState<Product | null>(null);
   const [isAdding, setIsAdding] = useState(false);
   const [moveMode, setMoveMode] = useState<"in" | "out" | null>(null);
+  const [activeVariantImg, setActiveVariantImg] = useState<Record<string, string>>({});
 
   const totalModels = db.products.length;
   const totalPcs = db.products.reduce((acc, p) => acc + totalQty(p), 0);
@@ -315,7 +316,19 @@ export default function StockTab() {
             return (
               <Card key={p.id} className="relative">
                 <div className="flex gap-3">
-                  <ProductImg src={p.img} size={68} alt={p.name} />
+                  <div className="relative shrink-0">
+                    <ProductImg src={activeVariantImg[p.id] || p.img} size={68} alt={p.name} />
+                    {activeVariantImg[p.id] && (
+                      <button
+                        type="button"
+                        onClick={() => setActiveVariantImg((prev) => ({ ...prev, [p.id]: "" }))}
+                        className="absolute -top-1.5 -right-1.5 bg-stone-800 text-white rounded-full w-4 h-4 text-[9px] flex items-center justify-center cursor-pointer shadow-xs"
+                        title="মূল ছবিতে ফিরুন"
+                      >
+                        ✕
+                      </button>
+                    )}
+                  </div>
 
                   <div className="flex-1 min-w-0">
                     <div className="flex items-start justify-between gap-1">
@@ -346,27 +359,47 @@ export default function StockTab() {
                       </div>
                     </div>
 
-                    {/* Stock by variant badges */}
+                    {/* Stock by variant badges with color image thumbnail */}
                     <div className="mt-2.5 flex flex-wrap gap-1.5">
                       {p.variants.map((v) => {
                         const isOut = v.qty <= 0;
                         const isUnderLow = v.qty <= (p.low || 3) && !isOut;
+                        const isSelected = activeVariantImg[p.id] === v.img && !!v.img;
                         return (
-                          <span
+                          <button
                             key={v.id}
-                            className={`inline-flex items-center gap-1 text-[11px] px-2 py-0.5 rounded-md font-medium border ${
-                              isOut
+                            type="button"
+                            onClick={() => {
+                              if (v.img) {
+                                setActiveVariantImg((prev) => ({
+                                  ...prev,
+                                  [p.id]: prev[p.id] === v.img ? "" : v.img!,
+                                }));
+                              }
+                            }}
+                            className={`inline-flex items-center gap-1.5 text-[11px] px-2 py-0.5 rounded-lg font-medium border transition-all text-left ${
+                              isSelected
+                                ? "ring-2 ring-amber-600 border-amber-600 bg-amber-100"
+                                : isOut
                                 ? "bg-red-50 text-red-700 border-red-200"
                                 : isUnderLow
-                                ? "bg-amber-50 text-amber-800 border-amber-300 font-bold"
-                                : "bg-emerald-50 text-emerald-800 border-emerald-200"
-                            }`}
+                                ? "bg-amber-50 text-amber-900 border-amber-300 font-bold"
+                                : "bg-stone-50 text-stone-800 border-stone-200 hover:bg-stone-100"
+                            } ${v.img ? "cursor-pointer" : "cursor-default"}`}
+                            title={v.img ? "এই কালারের ছবি দেখতে চাপুন" : undefined}
                           >
+                            {v.img ? (
+                              <img
+                                src={v.img}
+                                alt={v.color}
+                                className="w-4 h-4 rounded-full object-cover border border-amber-400 shrink-0"
+                              />
+                            ) : null}
                             <span>{v.color}</span>
-                            <span className="font-black">
+                            <span className="font-black text-stone-900">
                               {isOut ? "০ ❌" : `${v.qty} pcs`}
                             </span>
-                          </span>
+                          </button>
                         );
                       })}
                     </div>

@@ -201,6 +201,8 @@ function CreateOrderModal({ onClose }: { onClose: () => void }) {
       (it) => it.productId === pickedProd.id && it.variantId === pickedVar.id
     );
 
+    const itemImg = pickedVar.img || pickedProd.img;
+
     if (existingIdx >= 0) {
       setSelectedItems((prev) =>
         prev.map((it, idx) =>
@@ -218,6 +220,7 @@ function CreateOrderModal({ onClose }: { onClose: () => void }) {
           qty: 1,
           price,
           buy: pickedProd.buy,
+          img: itemImg,
         },
       ]);
     }
@@ -421,11 +424,45 @@ function CreateOrderModal({ onClose }: { onClose: () => void }) {
           </Field>
         </div>
 
-        {/* Bag Selector Section */}
+        {/* Bag Selector Section with Live Image Preview */}
         <div className="border-t border-stone-200 pt-3">
           <span className="text-xs font-bold text-stone-800 block mb-2">
             👜 ব্যাগ নির্বাচন ও আইটেম যোগ
           </span>
+
+          {/* Live Preview Card with Variant Picture */}
+          {pickedProd && (
+            <div className="flex items-center gap-3 bg-amber-50/80 p-2.5 rounded-xl border border-amber-900/15 mb-2.5">
+              <ProductImg
+                src={pickedVar?.img || pickedProd.img}
+                size={54}
+                alt={pickedProd.name}
+              />
+              <div className="min-w-0 flex-1">
+                <div className="font-bold text-xs text-stone-900 truncate">
+                  {pickedProd.name}
+                </div>
+                <div className="text-[11px] text-stone-600 flex flex-wrap items-center gap-1.5 mt-1">
+                  <span className="font-bold text-amber-900 bg-amber-100/90 border border-amber-200 px-1.5 py-0.5 rounded text-[10px] flex items-center gap-1">
+                    {pickedVar?.img ? "🎨" : "🏷️"} {pickedVar?.color || "স্ট্যান্ডার্ড"}
+                  </span>
+                  <span className="bg-white px-1.5 py-0.5 rounded text-[10px] border border-stone-200">
+                    {pickedVar?.size || "স্ট্যান্ডার্ড"}
+                  </span>
+                  <span
+                    className={`px-1.5 py-0.5 rounded text-[10px] font-bold ${
+                      (pickedVar?.qty || 0) <= 0
+                        ? "bg-red-100 text-red-700"
+                        : "bg-emerald-100 text-emerald-800"
+                    }`}
+                  >
+                    স্টক: {pickedVar ? `${pickedVar.qty} pcs` : "-"}
+                  </span>
+                </div>
+              </div>
+            </div>
+          )}
+
           <div className="flex gap-2 mb-2">
             <select
               className="flex-1 text-xs rounded-xl border border-stone-200 bg-stone-50 p-2 focus:outline-none"
@@ -444,7 +481,7 @@ function CreateOrderModal({ onClose }: { onClose: () => void }) {
               ))}
             </select>
             <select
-              className="w-36 text-xs rounded-xl border border-stone-200 bg-stone-50 p-2 focus:outline-none"
+              className="w-40 text-xs rounded-xl border border-stone-200 bg-stone-50 p-2 focus:outline-none"
               value={pickVid}
               onChange={(e) => setPickVid(e.target.value)}
             >
@@ -471,7 +508,7 @@ function CreateOrderModal({ onClose }: { onClose: () => void }) {
             </Btn>
           </div>
 
-          {/* Selected Items List */}
+          {/* Selected Items List with Image Thumbnails */}
           {selectedItems.length > 0 && (
             <div className="mt-2.5 space-y-1.5 bg-stone-50 p-2.5 rounded-xl border border-stone-200">
               <span className="text-[11px] font-bold text-stone-600 block">
@@ -480,20 +517,23 @@ function CreateOrderModal({ onClose }: { onClose: () => void }) {
               {selectedItems.map((it, idx) => (
                 <div
                   key={idx}
-                  className="flex items-center justify-between text-xs bg-white p-2 rounded-lg border border-stone-200"
+                  className="flex items-center justify-between text-xs bg-white p-2 rounded-lg border border-stone-200 gap-2"
                 >
-                  <div className="min-w-0 flex-1">
-                    <span className="font-bold text-stone-900 block truncate">
-                      {it.productName}
-                    </span>
-                    <span className="text-[11px] text-stone-500">
-                      {it.variantLabel} x {it.qty} = <b>৳{it.price * it.qty}</b>
-                    </span>
+                  <div className="flex items-center gap-2.5 min-w-0 flex-1">
+                    <ProductImg src={it.img} size={36} alt={it.productName} />
+                    <div className="min-w-0 flex-1">
+                      <span className="font-bold text-stone-900 block truncate">
+                        {it.productName}
+                      </span>
+                      <span className="text-[11px] text-stone-500">
+                        {it.variantLabel} x {it.qty} = <b>৳{it.price * it.qty}</b>
+                      </span>
+                    </div>
                   </div>
                   <button
                     type="button"
                     onClick={() => removeItem(idx)}
-                    className="text-stone-400 hover:text-red-600 text-sm ml-2 cursor-pointer"
+                    className="text-stone-400 hover:text-red-600 text-sm ml-2 cursor-pointer p-1"
                   >
                     ✕
                   </button>
@@ -867,16 +907,24 @@ export default function OrdersTab() {
                 )}
               </div>
 
-              {/* Items List */}
-              <div className="bg-stone-50 p-2.5 rounded-xl border border-stone-200 text-xs space-y-1 my-1">
-                {o.items.map((it, idx) => (
-                  <div key={idx} className="flex justify-between items-center">
-                    <span className="text-stone-800">
-                      👜 <b>{it.productName}</b> [{it.variantLabel}] x{it.qty}
-                    </span>
-                    <span className="font-bold text-stone-700">@৳{it.price}</span>
-                  </div>
-                ))}
+              {/* Items List with Photo Thumbnail */}
+              <div className="bg-stone-50 p-2.5 rounded-xl border border-stone-200 text-xs space-y-1.5 my-1">
+                {o.items.map((it, idx) => {
+                  const fallbackProd = db.products.find((p) => p.id === it.productId);
+                  const fallbackVar = fallbackProd?.variants.find((v) => v.id === it.variantId);
+                  const itemImg = it.img || fallbackVar?.img || fallbackProd?.img;
+                  return (
+                    <div key={idx} className="flex justify-between items-center gap-2">
+                      <div className="flex items-center gap-2 min-w-0">
+                        <ProductImg src={itemImg} size={28} alt={it.productName} />
+                        <span className="text-stone-800 truncate">
+                          <b>{it.productName}</b> <span className="text-stone-500">[{it.variantLabel}]</span> x{it.qty}
+                        </span>
+                      </div>
+                      <span className="font-bold text-stone-700 shrink-0">@৳{it.price}</span>
+                    </div>
+                  );
+                })}
               </div>
 
               {/* Steadfast CID / Status line */}

@@ -12,6 +12,7 @@ interface Row {
   size: string;
   color: string;
   qty: number;
+  img?: string;
 }
 
 export default function ProductModal({
@@ -32,10 +33,16 @@ export default function ProductModal({
   const [low, setLow] = useState((product?.low ?? 3).toString());
   const [rows, setRows] = useState<Row[]>(
     product && product.variants.length
-      ? product.variants.map((v) => ({ vid: v.id, size: v.size, color: v.color, qty: v.qty }))
+      ? product.variants.map((v) => ({
+          vid: v.id,
+          size: v.size,
+          color: v.color,
+          qty: v.qty,
+          img: v.img || "",
+        }))
       : [
-          { vid: uid(), size: "স্ট্যান্ডার্ড", color: "কালো (Black)", qty: 10 },
-          { vid: uid(), size: "স্ট্যান্ডার্ড", color: "বাদামী (Brown)", qty: 5 },
+          { vid: uid(), size: "স্ট্যান্ডার্ড", color: "কালো (Black)", qty: 10, img: "" },
+          { vid: uid(), size: "স্ট্যান্ডার্ড", color: "বাদামী (Brown)", qty: 5, img: "" },
         ]
   );
   const [img, setImg] = useState(product?.img || "");
@@ -50,8 +57,21 @@ export default function ProductModal({
   const addRow = () => {
     setRows((rs) => [
       ...rs,
-      { vid: uid(), size: "স্ট্যান্ডার্ড", color: "ট্যান (Tan)", qty: 5 },
+      { vid: uid(), size: "স্ট্যান্ডার্ড", color: "ট্যান (Tan)", qty: 5, img: "" },
     ]);
+  };
+
+  const pickVariantImg = async (i: number, f: File | undefined) => {
+    if (!f) return;
+    setBusy(true);
+    try {
+      const compressed = await compressImage(f);
+      setRow(i, "img", compressed);
+    } catch {
+      alert("ভ্যারিয়েন্ট ছবি প্রসেস করা যায়নি");
+    } finally {
+      setBusy(false);
+    }
   };
 
   const removeRow = (i: number) => {
@@ -95,6 +115,7 @@ export default function ProductModal({
       size: (r.size || "স্ট্যান্ডার্ড").trim(),
       color: (r.color || "কালো").trim(),
       qty: parseInt(String(r.qty)) || 0,
+      img: r.img ? r.img.trim() : undefined,
     }));
 
     const total = vars.reduce((a, v) => a + v.qty, 0);
@@ -257,27 +278,76 @@ export default function ProductModal({
           </div>
         </div>
 
-        {/* Variants: Color + Size/Type + Qty */}
+        {/* Variants: Color + Size/Type + Qty + Variant Image */}
         <div className="border-t border-stone-200 pt-3">
           <div className="flex items-center justify-between mb-2">
-            <span className="text-xs font-bold text-stone-700">
-              কালার ও সাইজ ভ্যারিয়েন্ট ({rows.length}টি)
-            </span>
+            <div>
+              <span className="text-xs font-bold text-stone-700 block">
+                কালার ও সাইজ ভ্যারিয়েন্ট ({rows.length}টি)
+              </span>
+              <span className="text-[10px] text-amber-800 font-medium">
+                📷 প্রতিটি কালারের জন্য ছবি যুক্ত করতে পারবেন
+              </span>
+            </div>
             <button
               type="button"
               onClick={addRow}
-              className="text-xs font-bold text-amber-800 hover:text-amber-900 cursor-pointer"
+              className="text-xs font-bold text-amber-800 hover:text-amber-900 cursor-pointer bg-amber-50 px-2.5 py-1 rounded-lg border border-amber-200"
             >
               + ভ্যারিয়েন্ট যোগ
             </button>
           </div>
 
-          <div className="space-y-2 max-h-48 overflow-y-auto pr-1">
+          <div className="space-y-2 max-h-56 overflow-y-auto pr-1">
             {rows.map((r, i) => (
               <div
                 key={r.vid || i}
                 className="flex items-center gap-2 bg-stone-50 p-2 rounded-xl border border-stone-200 text-xs"
               >
+                {/* Variant Image Uploader */}
+                <div className="shrink-0">
+                  <input
+                    id={`var-img-${i}`}
+                    type="file"
+                    accept="image/*"
+                    className="hidden"
+                    onChange={(e) => pickVariantImg(i, e.target.files?.[0])}
+                  />
+                  {r.img ? (
+                    <div className="relative group">
+                      <img
+                        src={r.img}
+                        alt={r.color}
+                        className="w-8 h-8 rounded-lg object-cover border border-amber-400 shadow-2xs"
+                      />
+                      <label
+                        htmlFor={`var-img-${i}`}
+                        className="absolute inset-0 bg-black/50 text-white text-[8px] rounded-lg opacity-0 group-hover:opacity-100 flex items-center justify-center cursor-pointer transition-opacity font-bold text-center leading-tight"
+                        title="ছবি পরিবর্তন করুন"
+                      >
+                        বদলে
+                      </label>
+                      <button
+                        type="button"
+                        onClick={() => setRow(i, "img", "")}
+                        className="absolute -top-1.5 -right-1.5 w-4 h-4 bg-red-600 text-white rounded-full flex items-center justify-center text-[9px] hover:bg-red-700 shadow-xs cursor-pointer leading-none"
+                        title="ছবি মুছুন"
+                      >
+                        ✕
+                      </button>
+                    </div>
+                  ) : (
+                    <label
+                      htmlFor={`var-img-${i}`}
+                      className="w-8 h-8 rounded-lg border border-dashed border-stone-300 bg-white hover:border-amber-500 hover:bg-amber-50 flex flex-col items-center justify-center text-stone-400 hover:text-amber-800 cursor-pointer transition-colors"
+                      title="এই কালারের ছবি আপলোড করুন"
+                    >
+                      <span className="text-xs leading-none">📷</span>
+                      <span className="text-[8px] font-bold leading-none mt-0.5">ছবি</span>
+                    </label>
+                  )}
+                </div>
+
                 <div className="flex-1">
                   <input
                     list="color-presets"
@@ -292,11 +362,11 @@ export default function ProductModal({
                     ))}
                   </datalist>
                 </div>
-                <div className="w-24">
+                <div className="w-20">
                   <input
                     list="size-presets"
                     className="w-full rounded-lg border border-stone-300 bg-white p-1.5 text-xs focus:outline-none"
-                    placeholder="সাইজ/টাইপ"
+                    placeholder="সাইজ"
                     value={r.size}
                     onChange={(e) => setRow(i, "size", e.target.value)}
                   />
@@ -306,7 +376,7 @@ export default function ProductModal({
                     ))}
                   </datalist>
                 </div>
-                <div className="w-16">
+                <div className="w-14">
                   <input
                     type="number"
                     className="w-full rounded-lg border border-stone-300 bg-white p-1.5 text-xs text-center font-bold focus:outline-none"

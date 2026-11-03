@@ -10,6 +10,7 @@ export interface Variant {
   size: string; // e.g. "স্ট্যান্ডার্ড", "মিডিয়াম", "লার্জ", "মিনি", "কাস্টম"
   color: string; // e.g. "কালো", "বাদামী", "মেরুন", "ট্যান", "ক্রিম", "পিংক"
   qty: number;
+  img?: string; // specific variant picture
 }
 
 export interface Product {
@@ -33,6 +34,7 @@ export interface OrderItem {
   qty: number;
   price: number;
   buy?: number;
+  img?: string;
 }
 
 export type OrderStatus =
