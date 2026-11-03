@@ -65,34 +65,68 @@ function MoveModal({
           </p>
         )}
 
+        {/* Bag Preview & Model Selection */}
         <div>
           <label className="block text-xs font-bold text-stone-700 mb-1">ব্যাগ মডেল নির্বাচন করুন</label>
-          <select
-            className={inputCls}
-            value={pid}
-            onChange={(e) => {
-              setPid(e.target.value);
-              const p = db.products.find((x) => x.id === e.target.value);
-              setVid(p?.variants[0]?.id || "");
-            }}
-          >
-            {db.products.map((p) => (
-              <option key={p.id} value={p.id}>
-                {p.name} ({totalQty(p)} pcs স্টকে)
-              </option>
-            ))}
-          </select>
+          <div className="flex items-center gap-2.5 p-2 rounded-xl border border-stone-200 bg-stone-50 mb-2">
+            <ProductImg src={prod?.img} size={48} alt={prod?.name} />
+            <div className="flex-1 min-w-0">
+              <select
+                className="w-full text-xs rounded-lg border border-stone-300 bg-white p-2 font-bold focus:outline-none"
+                value={pid}
+                onChange={(e) => {
+                  setPid(e.target.value);
+                  const p = db.products.find((x) => x.id === e.target.value);
+                  setVid(p?.variants[0]?.id || "");
+                }}
+              >
+                {db.products.map((p) => (
+                  <option key={p.id} value={p.id}>
+                    {p.name} ({totalQty(p)} pcs স্টকে)
+                  </option>
+                ))}
+              </select>
+            </div>
+          </div>
         </div>
 
+        {/* Visual Color Chips with Photos */}
         <div>
-          <label className="block text-xs font-bold text-stone-700 mb-1">কালার ও ভ্যারিয়েন্ট</label>
-          <select className={inputCls} value={vid} onChange={(e) => setVid(e.target.value)}>
-            {(prod?.variants || []).map((v) => (
-              <option key={v.id} value={v.id}>
-                {v.color} ({v.size}) — স্টকে: {v.qty} pcs
-              </option>
-            ))}
-          </select>
+          <label className="block text-xs font-bold text-stone-700 mb-1">কালার ও ভ্যারিয়েন্ট নির্বাচন করুন</label>
+          <div className="flex flex-wrap gap-2">
+            {(prod?.variants || []).map((v) => {
+              const isSelected = v.id === vid;
+              const varImg = v.img || prod?.img;
+              return (
+                <button
+                  key={v.id}
+                  type="button"
+                  onClick={() => setVid(v.id)}
+                  className={`flex items-center gap-2 p-1.5 pr-3 rounded-xl border text-xs cursor-pointer text-left transition-all ${
+                    isSelected
+                      ? "border-amber-600 bg-amber-100 ring-2 ring-amber-600 shadow-xs"
+                      : "border-stone-200 bg-white hover:border-amber-400"
+                  }`}
+                >
+                  {varImg ? (
+                    <img
+                      src={varImg}
+                      alt={v.color}
+                      className="w-8 h-8 rounded-lg object-cover border border-amber-300 shrink-0"
+                    />
+                  ) : (
+                    <span className="w-8 h-8 rounded-lg bg-stone-200 flex items-center justify-center text-xs shrink-0">
+                      👜
+                    </span>
+                  )}
+                  <div className="leading-tight">
+                    <span className="font-bold text-stone-900 block text-xs">{v.color}</span>
+                    <span className="text-[10px] text-stone-500 font-bold">স্টকে: {v.qty} pcs</span>
+                  </div>
+                </button>
+              );
+            })}
+          </div>
         </div>
 
         <div>
@@ -138,6 +172,7 @@ export default function StockTab() {
   const [isAdding, setIsAdding] = useState(false);
   const [moveMode, setMoveMode] = useState<"in" | "out" | null>(null);
   const [activeVariantImg, setActiveVariantImg] = useState<Record<string, string>>({});
+  const [zoomImg, setZoomImg] = useState<{ src: string; title: string } | null>(null);
 
   const totalModels = db.products.length;
   const totalPcs = db.products.reduce((acc, p) => acc + totalQty(p), 0);
@@ -315,14 +350,30 @@ export default function StockTab() {
 
             return (
               <Card key={p.id} className="relative">
-                <div className="flex gap-3">
+                <div className="flex gap-3.5">
+                  {/* Large Product Image with Zoom Support */}
                   <div className="relative shrink-0">
-                    <ProductImg src={activeVariantImg[p.id] || p.img} size={68} alt={p.name} />
+                    <button
+                      type="button"
+                      onClick={() =>
+                        setZoomImg({
+                          src: activeVariantImg[p.id] || p.img || "",
+                          title: p.name,
+                        })
+                      }
+                      className="block cursor-pointer hover:opacity-95 transition-all rounded-2xl overflow-hidden focus:outline-none shadow-xs border-2 border-stone-200 hover:border-amber-500"
+                      title="ছবি বড় করে দেখতে চাপুন"
+                    >
+                      <ProductImg src={activeVariantImg[p.id] || p.img} size={110} alt={p.name} />
+                      <span className="absolute bottom-1.5 right-1.5 bg-stone-900/80 text-white rounded-md px-1.5 py-0.5 text-[10px] leading-none flex items-center gap-0.5 font-bold shadow-xs">
+                        🔍 বড় ছবি
+                      </span>
+                    </button>
                     {activeVariantImg[p.id] && (
                       <button
                         type="button"
                         onClick={() => setActiveVariantImg((prev) => ({ ...prev, [p.id]: "" }))}
-                        className="absolute -top-1.5 -right-1.5 bg-stone-800 text-white rounded-full w-4 h-4 text-[9px] flex items-center justify-center cursor-pointer shadow-xs"
+                        className="absolute -top-2 -right-2 bg-stone-900 text-white rounded-full w-6 h-6 text-xs flex items-center justify-center cursor-pointer shadow-md hover:bg-black font-black"
                         title="মূল ছবিতে ফিরুন"
                       >
                         ✕
@@ -333,16 +384,16 @@ export default function StockTab() {
                   <div className="flex-1 min-w-0">
                     <div className="flex items-start justify-between gap-1">
                       <div>
-                        <h3 className="font-bold text-stone-900 text-sm leading-tight">
+                        <h3 className="font-black text-stone-900 text-sm md:text-base leading-snug">
                           {p.name}
                         </h3>
-                        <div className="text-[11px] text-stone-500 mt-0.5 flex items-center gap-2">
-                          <span className="font-semibold text-stone-700 bg-stone-100 px-1.5 py-0.5 rounded">
+                        <div className="text-[11px] text-stone-500 mt-0.5 flex flex-wrap items-center gap-2">
+                          <span className="font-bold text-stone-700 bg-stone-100 px-1.5 py-0.5 rounded">
                             {p.code}
                           </span>
                           <span>{p.cat}</span>
                           {p.active === false && (
-                            <span className="text-red-600 font-bold bg-red-50 px-1 rounded">
+                            <span className="text-red-600 font-bold bg-red-50 px-1.5 py-0.5 rounded text-[10px]">
                               (বিক্রি বন্ধ)
                             </span>
                           )}
@@ -350,21 +401,22 @@ export default function StockTab() {
                       </div>
 
                       <div className="text-right shrink-0">
-                        <div className="text-sm font-black text-amber-900">৳{p.sell}</div>
+                        <div className="text-base font-black text-amber-950">৳{p.sell}</div>
                         {isOwner && (
-                          <div className="text-[10px] text-emerald-700 font-medium">
+                          <div className="text-[10px] text-emerald-700 font-bold">
                             লাভ: ৳{margin}
                           </div>
                         )}
                       </div>
                     </div>
 
-                    {/* Stock by variant badges with color image thumbnail */}
-                    <div className="mt-2.5 flex flex-wrap gap-1.5">
+                    {/* Stock by variant badges with clearly visible large 48px photo thumbnails */}
+                    <div className="mt-2.5 flex flex-wrap gap-2">
                       {p.variants.map((v) => {
                         const isOut = v.qty <= 0;
                         const isUnderLow = v.qty <= (p.low || 3) && !isOut;
                         const isSelected = activeVariantImg[p.id] === v.img && !!v.img;
+                        const varDisplayImg = v.img || p.img;
                         return (
                           <button
                             key={v.id}
@@ -375,30 +427,41 @@ export default function StockTab() {
                                   ...prev,
                                   [p.id]: prev[p.id] === v.img ? "" : v.img!,
                                 }));
+                              } else {
+                                setZoomImg({
+                                  src: p.img || "",
+                                  title: `${p.name} - ${v.color}`,
+                                });
                               }
                             }}
-                            className={`inline-flex items-center gap-1.5 text-[11px] px-2 py-0.5 rounded-lg font-medium border transition-all text-left ${
+                            className={`inline-flex items-center gap-2.5 text-xs p-1.5 pr-3 rounded-2xl font-medium border-2 transition-all text-left ${
                               isSelected
-                                ? "ring-2 ring-amber-600 border-amber-600 bg-amber-100"
+                                ? "ring-2 ring-amber-600 border-amber-600 bg-amber-100 shadow-xs"
                                 : isOut
                                 ? "bg-red-50 text-red-700 border-red-200"
                                 : isUnderLow
                                 ? "bg-amber-50 text-amber-900 border-amber-300 font-bold"
-                                : "bg-stone-50 text-stone-800 border-stone-200 hover:bg-stone-100"
-                            } ${v.img ? "cursor-pointer" : "cursor-default"}`}
-                            title={v.img ? "এই কালারের ছবি দেখতে চাপুন" : undefined}
+                                : "bg-white text-stone-800 border-stone-200 hover:border-amber-400 hover:bg-stone-50"
+                            } cursor-pointer`}
+                            title={v.img ? "এই কালারের ছবি বড় দেখতে চাপুন" : "ছবি দেখতে চাপুন"}
                           >
-                            {v.img ? (
+                            {varDisplayImg ? (
                               <img
-                                src={v.img}
+                                src={varDisplayImg}
                                 alt={v.color}
-                                className="w-4 h-4 rounded-full object-cover border border-amber-400 shrink-0"
+                                className="w-12 h-12 rounded-xl object-cover border border-amber-300 shrink-0 shadow-2xs"
                               />
-                            ) : null}
-                            <span>{v.color}</span>
-                            <span className="font-black text-stone-900">
-                              {isOut ? "০ ❌" : `${v.qty} pcs`}
-                            </span>
+                            ) : (
+                              <span className="w-12 h-12 rounded-xl bg-amber-50 border border-amber-200 flex items-center justify-center text-sm text-stone-600 shrink-0">
+                                👜
+                              </span>
+                            )}
+                            <div className="leading-tight">
+                              <span className="font-black text-stone-900 block text-xs">{v.color}</span>
+                              <span className={`text-[11px] font-black ${isOut ? "text-red-600" : "text-stone-600"}`}>
+                                {isOut ? "০ (শেষ ❌)" : `${v.qty} pcs`}
+                              </span>
+                            </div>
                           </button>
                         );
                       })}
@@ -471,6 +534,24 @@ export default function StockTab() {
       {/* Stock In / Out Modal */}
       {moveMode && (
         <MoveModal mode={moveMode} onClose={() => setMoveMode(null)} />
+      )}
+
+      {/* Bag Image Zoom Lightbox Modal */}
+      {zoomImg && (
+        <Modal title={zoomImg.title} onClose={() => setZoomImg(null)}>
+          <div className="flex flex-col items-center p-2">
+            <img
+              src={zoomImg.src}
+              alt={zoomImg.title}
+              className="max-h-[65vh] w-auto max-w-full rounded-2xl object-contain border border-stone-200 shadow-lg bg-white"
+            />
+            <div className="mt-4 text-center">
+              <Btn small color="gray" onClick={() => setZoomImg(null)}>
+                বন্ধ করুন
+              </Btn>
+            </div>
+          </div>
+        </Modal>
       )}
     </div>
   );

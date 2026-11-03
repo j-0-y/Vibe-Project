@@ -157,6 +157,21 @@ function CreateOrderModal({ onClose }: { onClose: () => void }) {
   const [pickVid, setPickVid] = useState(pickedProd?.variants[0]?.id || "");
   const pickedVar = pickedProd?.variants.find((v) => v.id === pickVid);
   const [pickPrice, setPickPrice] = useState(pickedProd?.sell?.toString() || "");
+  const [pickQty, setPickQty] = useState(1);
+  const [showProductPicker, setShowProductPicker] = useState(false);
+  const [pickerSearch, setPickerSearch] = useState("");
+
+  const filteredPickerProducts = useMemo(() => {
+    return db.products.filter(isActive).filter((p) => {
+      if (!pickerSearch.trim()) return true;
+      const q = pickerSearch.toLowerCase();
+      return (
+        p.name.toLowerCase().includes(q) ||
+        p.code.toLowerCase().includes(q) ||
+        p.cat.toLowerCase().includes(q)
+      );
+    });
+  }, [db.products, pickerSearch]);
 
   // Fraud check modal
   const [fraudReport, setFraudReport] = useState<FraudReport | null>(null);
@@ -203,10 +218,11 @@ function CreateOrderModal({ onClose }: { onClose: () => void }) {
 
     const itemImg = pickedVar.img || pickedProd.img;
 
+    const itemQty = Math.max(1, pickQty || 1);
     if (existingIdx >= 0) {
       setSelectedItems((prev) =>
         prev.map((it, idx) =>
-          idx === existingIdx ? { ...it, qty: it.qty + 1 } : it
+          idx === existingIdx ? { ...it, qty: it.qty + itemQty } : it
         )
       );
     } else {
@@ -217,7 +233,7 @@ function CreateOrderModal({ onClose }: { onClose: () => void }) {
           variantId: pickedVar.id,
           productName: pickedProd.name,
           variantLabel: `${pickedVar.color} (${pickedVar.size})`,
-          qty: 1,
+          qty: itemQty,
           price,
           buy: pickedProd.buy,
           img: itemImg,
@@ -424,77 +440,147 @@ function CreateOrderModal({ onClose }: { onClose: () => void }) {
           </Field>
         </div>
 
-        {/* Bag Selector Section with Live Image Preview */}
+        {/* Visual Bag Selector (No dropdowns - Visual Card & Photo Picker) */}
         <div className="border-t border-stone-200 pt-3">
-          <span className="text-xs font-bold text-stone-800 block mb-2">
-            👜 ব্যাগ নির্বাচন ও আইটেম যোগ
-          </span>
+          <div className="flex items-center justify-between mb-2">
+            <span className="text-xs font-bold text-stone-800">
+              👜 ব্যাগ নির্বাচন ও আইটেম যোগ
+            </span>
+            <button
+              type="button"
+              onClick={() => setShowProductPicker(true)}
+              className="text-xs font-bold text-amber-800 hover:text-amber-900 bg-amber-50 hover:bg-amber-100 px-2.5 py-1 rounded-xl border border-amber-300 transition-colors cursor-pointer flex items-center gap-1"
+            >
+              <span>🔄 অন্য ব্যাগ নির্বাচন</span>
+              <span className="text-[10px]">▼</span>
+            </button>
+          </div>
 
-          {/* Live Preview Card with Variant Picture */}
-          {pickedProd && (
-            <div className="flex items-center gap-3 bg-amber-50/80 p-2.5 rounded-xl border border-amber-900/15 mb-2.5">
-              <ProductImg
-                src={pickedVar?.img || pickedProd.img}
-                size={54}
-                alt={pickedProd.name}
-              />
+          {/* Active Product Card with Large Photo (No plain dropdowns) */}
+          {pickedProd ? (
+            <div
+              onClick={() => setShowProductPicker(true)}
+              className="flex items-center gap-3.5 bg-gradient-to-r from-amber-50 to-orange-50/70 hover:from-amber-100 hover:to-orange-100 p-3 rounded-2xl border-2 border-amber-600/50 hover:border-amber-700 cursor-pointer transition-all shadow-xs group"
+              title="অন্য ব্যাগ পরিবর্তন করতে চাপুন"
+            >
+              <div className="relative shrink-0">
+                <ProductImg
+                  src={pickedVar?.img || pickedProd.img}
+                  size={80}
+                  alt={pickedProd.name}
+                />
+                <span className="absolute -bottom-1 -right-1 bg-amber-800 text-white text-[9px] px-1.5 py-0.5 rounded-full font-bold shadow-xs">
+                  ছবি
+                </span>
+              </div>
               <div className="min-w-0 flex-1">
-                <div className="font-bold text-xs text-stone-900 truncate">
-                  {pickedProd.name}
+                <div className="flex items-start justify-between gap-1">
+                  <h4 className="font-black text-sm md:text-base text-stone-900 group-hover:text-amber-950">
+                    {pickedProd.name}
+                  </h4>
+                  <span className="text-sm md:text-base font-black text-amber-950 shrink-0">
+                    ৳{pickedProd.sell}
+                  </span>
                 </div>
-                <div className="text-[11px] text-stone-600 flex flex-wrap items-center gap-1.5 mt-1">
-                  <span className="font-bold text-amber-900 bg-amber-100/90 border border-amber-200 px-1.5 py-0.5 rounded text-[10px] flex items-center gap-1">
-                    {pickedVar?.img ? "🎨" : "🏷️"} {pickedVar?.color || "স্ট্যান্ডার্ড"}
+                <div className="text-xs text-stone-600 mt-1 flex flex-wrap items-center gap-1.5">
+                  <span className="font-bold text-stone-800 bg-white px-2 py-0.5 rounded-md border border-stone-200">
+                    {pickedProd.code}
                   </span>
-                  <span className="bg-white px-1.5 py-0.5 rounded text-[10px] border border-stone-200">
-                    {pickedVar?.size || "স্ট্যান্ডার্ড"}
-                  </span>
+                  <span>{pickedProd.cat}</span>
                   <span
-                    className={`px-1.5 py-0.5 rounded text-[10px] font-bold ${
-                      (pickedVar?.qty || 0) <= 0
+                    className={`px-2 py-0.5 rounded-md font-bold text-[11px] ${
+                      totalQty(pickedProd) <= 0
                         ? "bg-red-100 text-red-700"
                         : "bg-emerald-100 text-emerald-800"
                     }`}
                   >
-                    স্টক: {pickedVar ? `${pickedVar.qty} pcs` : "-"}
+                    মোট স্টক: {totalQty(pickedProd)} pcs
                   </span>
                 </div>
+                <div className="mt-2 flex items-center gap-1 text-xs text-amber-900 font-bold group-hover:underline">
+                  <span>🔄 ব্যাগ পরিবর্তন করতে চাপুন (সব ছবিসহ ক্যাটালগ)</span>
+                  <span className="text-[10px]">▼</span>
+                </div>
+              </div>
+            </div>
+          ) : (
+            <button
+              type="button"
+              onClick={() => setShowProductPicker(true)}
+              className="w-full p-4 border-2 border-dashed border-amber-400 rounded-2xl bg-amber-50/70 hover:bg-amber-100/70 text-amber-900 font-bold text-xs flex items-center justify-center gap-2 cursor-pointer shadow-xs"
+            >
+              👜 ছবিসহ ব্যাগ নির্বাচন করুন (ক্লিক করুন)
+            </button>
+          )}
+
+          {/* Visual Color Variants with Large 44px Pictures */}
+          {pickedProd && (
+            <div className="mt-2.5 bg-stone-50/90 p-3 rounded-2xl border border-stone-200">
+              <div className="flex items-center justify-between mb-2">
+                <span className="text-xs font-black text-stone-800">
+                  কালার নির্বাচন করুন ({pickedProd.variants.length}টি কালার):
+                </span>
+                {pickedVar && (
+                  <span className="text-xs font-black text-amber-950 bg-amber-100 px-2.5 py-0.5 rounded-full border border-amber-300">
+                    নির্বাচিত: {pickedVar.color}
+                  </span>
+                )}
+              </div>
+
+              <div className="flex flex-wrap gap-2.5">
+                {pickedProd.variants.map((v) => {
+                  const isSelected = v.id === pickVid;
+                  const isOut = v.qty <= 0;
+                  const varImg = v.img || pickedProd.img;
+                  return (
+                    <button
+                      key={v.id}
+                      type="button"
+                      onClick={() => setPickVid(v.id)}
+                      className={`flex items-center gap-2.5 p-1.5 pr-3 rounded-2xl border-2 text-xs font-medium transition-all cursor-pointer text-left ${
+                        isSelected
+                          ? "border-amber-600 bg-amber-100 ring-2 ring-amber-600 shadow-xs"
+                          : isOut
+                          ? "border-red-200 bg-red-50 text-red-700"
+                          : "border-stone-200 bg-white hover:border-amber-400 hover:bg-amber-50/60 text-stone-800 shadow-2xs"
+                      }`}
+                    >
+                      {varImg ? (
+                        <img
+                          src={varImg}
+                          alt={v.color}
+                          className="w-11 h-11 rounded-xl object-cover border-2 border-amber-300 shrink-0 shadow-2xs"
+                        />
+                      ) : (
+                        <span className="w-11 h-11 rounded-xl bg-amber-50 border border-amber-200 flex items-center justify-center text-sm text-stone-600 shrink-0">
+                          👜
+                        </span>
+                      )}
+                      <div className="leading-tight">
+                        <span className="font-black text-stone-900 block text-xs">
+                          {v.color}
+                        </span>
+                        <span
+                          className={`text-[11px] font-black ${
+                            isOut ? "text-red-600" : "text-stone-600"
+                          }`}
+                        >
+                          {isOut ? "স্টক শেষ ❌" : `${v.qty} pcs`}
+                        </span>
+                      </div>
+                    </button>
+                  );
+                })}
               </div>
             </div>
           )}
 
-          <div className="flex gap-2 mb-2">
-            <select
-              className="flex-1 text-xs rounded-xl border border-stone-200 bg-stone-50 p-2 focus:outline-none"
-              value={pickPid}
-              onChange={(e) => {
-                setPickPid(e.target.value);
-                const p = db.products.find((x) => x.id === e.target.value);
-                setPickVid(p?.variants[0]?.id || "");
-                setPickPrice(p?.sell?.toString() || "");
-              }}
-            >
-              {db.products.filter(isActive).map((p) => (
-                <option key={p.id} value={p.id}>
-                  {p.name} ({p.code}) — ৳{p.sell}
-                </option>
-              ))}
-            </select>
-            <select
-              className="w-40 text-xs rounded-xl border border-stone-200 bg-stone-50 p-2 focus:outline-none"
-              value={pickVid}
-              onChange={(e) => setPickVid(e.target.value)}
-            >
-              {(pickedProd?.variants || []).map((v) => (
-                <option key={v.id} value={v.id}>
-                  {v.color} ({v.qty} pcs)
-                </option>
-              ))}
-            </select>
-          </div>
-
-          <div className="flex items-center gap-2">
+          {/* Pricing, Quantity & Add Button */}
+          <div className="mt-2.5 flex items-end gap-2">
             <div className="w-28">
+              <label className="text-[10px] font-bold text-stone-500 block mb-1">
+                দাম (৳)
+              </label>
               <input
                 type="number"
                 placeholder="দাম ৳"
@@ -503,9 +589,23 @@ function CreateOrderModal({ onClose }: { onClose: () => void }) {
                 onChange={(e) => setPickPrice(e.target.value)}
               />
             </div>
-            <Btn small color="amber" onClick={addItem} className="flex-1">
-              + ব্যাগে যোগ করুন
-            </Btn>
+            <div className="w-20">
+              <label className="text-[10px] font-bold text-stone-500 block mb-1">
+                পরিমাণ
+              </label>
+              <input
+                type="number"
+                min={1}
+                className="w-full text-xs rounded-xl border border-stone-200 bg-white p-2 font-black text-center focus:outline-none"
+                value={pickQty}
+                onChange={(e) => setPickQty(Math.max(1, parseInt(e.target.value) || 1))}
+              />
+            </div>
+            <div className="flex-1">
+              <Btn small color="amber" onClick={addItem} className="w-full py-2">
+                + অর্ডারে যোগ করুন
+              </Btn>
+            </div>
           </div>
 
           {/* Selected Items List with Image Thumbnails */}
@@ -638,6 +738,105 @@ function CreateOrderModal({ onClose }: { onClose: () => void }) {
             <Btn small color="gray" onClick={() => setFraudReport(null)}>
               ঠিক আছে
             </Btn>
+          </div>
+        </Modal>
+      )}
+
+      {/* Visual Product Picker Modal with Search, Photos & Variants */}
+      {showProductPicker && (
+        <Modal
+          title="👜 ছবিসহ ব্যাগ নির্বাচন করুন"
+          onClose={() => setShowProductPicker(false)}
+        >
+          <div className="space-y-3">
+            <input
+              type="search"
+              placeholder="🔍 ব্যাগের নাম বা কোড দিয়ে খুঁজুন..."
+              className={inputCls}
+              value={pickerSearch}
+              onChange={(e) => setPickerSearch(e.target.value)}
+              autoFocus
+            />
+
+            <div className="space-y-2 max-h-[58vh] overflow-y-auto pr-1">
+              {filteredPickerProducts.length === 0 ? (
+                <Empty text="কোন ব্যাগ খুঁজে পাওয়া যায়নি" />
+              ) : (
+                filteredPickerProducts.map((p) => {
+                  const isSelected = p.id === pickPid;
+                  const stock = totalQty(p);
+                  return (
+                    <div
+                      key={p.id}
+                      onClick={() => {
+                        setPickPid(p.id);
+                        setPickVid(p.variants[0]?.id || "");
+                        setPickPrice(p.sell?.toString() || "");
+                        setShowProductPicker(false);
+                      }}
+                      className={`flex items-center gap-3.5 p-3 rounded-2xl border-2 transition-all cursor-pointer ${
+                        isSelected
+                          ? "border-amber-600 bg-amber-50 ring-2 ring-amber-500 shadow-xs"
+                          : "border-stone-200 bg-white hover:border-amber-400 hover:bg-stone-50"
+                      }`}
+                    >
+                      <ProductImg src={p.img} size={72} alt={p.name} />
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-start justify-between gap-1">
+                          <h4 className="font-black text-stone-900 text-sm md:text-base truncate">
+                            {p.name}
+                          </h4>
+                          <span className="font-black text-amber-950 text-sm md:text-base shrink-0">
+                            ৳{p.sell}
+                          </span>
+                        </div>
+                        <div className="text-xs text-stone-500 mt-0.5 flex flex-wrap items-center gap-1.5">
+                          <span className="font-bold text-stone-700 bg-stone-100 px-2 py-0.5 rounded-md border border-stone-200">
+                            {p.code}
+                          </span>
+                          <span>{p.cat}</span>
+                          <span
+                            className={`px-2 py-0.5 rounded-md font-bold text-[11px] ${
+                              stock <= 0
+                                ? "bg-red-100 text-red-700"
+                                : "bg-emerald-100 text-emerald-800"
+                            }`}
+                          >
+                            মোট স্টক: {stock} pcs
+                          </span>
+                        </div>
+                        <div className="mt-1.5 flex flex-wrap gap-1.5">
+                          {p.variants.map((v) => (
+                            <span
+                              key={v.id}
+                              className="text-xs bg-stone-100 text-stone-700 px-2 py-1 rounded-lg border border-stone-200 flex items-center gap-1.5 font-medium"
+                            >
+                              {v.img ? (
+                                <img
+                                  src={v.img}
+                                  alt={v.color}
+                                  className="w-6 h-6 rounded-md object-cover border border-amber-300 inline"
+                                />
+                              ) : (
+                                <span className="w-6 h-6 rounded-md bg-stone-200 flex items-center justify-center text-[10px]">👜</span>
+                              )}
+                              <span>{v.color}</span>
+                              <b className={v.qty <= 0 ? "text-red-600" : "text-stone-800"}>({v.qty})</b>
+                            </span>
+                          ))}
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })
+              )}
+            </div>
+
+            <div className="pt-2 text-right">
+              <Btn small color="gray" onClick={() => setShowProductPicker(false)}>
+                বন্ধ করুন
+              </Btn>
+            </div>
           </div>
         </Modal>
       )}

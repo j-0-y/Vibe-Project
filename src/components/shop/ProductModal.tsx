@@ -304,7 +304,7 @@ export default function ProductModal({
                 key={r.vid || i}
                 className="flex items-center gap-2 bg-stone-50 p-2 rounded-xl border border-stone-200 text-xs"
               >
-                {/* Variant Image Uploader */}
+                {/* Variant Image Uploader (Larger 48x48px Thumbnail) */}
                 <div className="shrink-0">
                   <input
                     id={`var-img-${i}`}
@@ -318,19 +318,19 @@ export default function ProductModal({
                       <img
                         src={r.img}
                         alt={r.color}
-                        className="w-8 h-8 rounded-lg object-cover border border-amber-400 shadow-2xs"
+                        className="w-12 h-12 rounded-xl object-cover border-2 border-amber-400 shadow-xs"
                       />
                       <label
                         htmlFor={`var-img-${i}`}
-                        className="absolute inset-0 bg-black/50 text-white text-[8px] rounded-lg opacity-0 group-hover:opacity-100 flex items-center justify-center cursor-pointer transition-opacity font-bold text-center leading-tight"
+                        className="absolute inset-0 bg-black/60 text-white text-[9px] rounded-xl opacity-0 group-hover:opacity-100 flex items-center justify-center cursor-pointer transition-opacity font-bold text-center leading-tight p-0.5"
                         title="ছবি পরিবর্তন করুন"
                       >
-                        বদলে
+                        বদলে দিন
                       </label>
                       <button
                         type="button"
                         onClick={() => setRow(i, "img", "")}
-                        className="absolute -top-1.5 -right-1.5 w-4 h-4 bg-red-600 text-white rounded-full flex items-center justify-center text-[9px] hover:bg-red-700 shadow-xs cursor-pointer leading-none"
+                        className="absolute -top-1.5 -right-1.5 w-5 h-5 bg-red-600 text-white rounded-full flex items-center justify-center text-[10px] hover:bg-red-700 shadow-xs cursor-pointer font-bold leading-none"
                         title="ছবি মুছুন"
                       >
                         ✕
@@ -339,11 +339,11 @@ export default function ProductModal({
                   ) : (
                     <label
                       htmlFor={`var-img-${i}`}
-                      className="w-8 h-8 rounded-lg border border-dashed border-stone-300 bg-white hover:border-amber-500 hover:bg-amber-50 flex flex-col items-center justify-center text-stone-400 hover:text-amber-800 cursor-pointer transition-colors"
+                      className="w-12 h-12 rounded-xl border-2 border-dashed border-amber-300 bg-amber-50/50 hover:border-amber-500 hover:bg-amber-100/70 flex flex-col items-center justify-center text-amber-800 cursor-pointer transition-colors shadow-2xs"
                       title="এই কালারের ছবি আপলোড করুন"
                     >
-                      <span className="text-xs leading-none">📷</span>
-                      <span className="text-[8px] font-bold leading-none mt-0.5">ছবি</span>
+                      <span className="text-sm leading-none">📷</span>
+                      <span className="text-[9px] font-bold leading-none mt-1">ছবি দিন</span>
                     </label>
                   )}
                 </div>
