@@ -619,14 +619,14 @@ function CreateOrderModal({ onClose }: { onClose: () => void }) {
                   key={idx}
                   className="flex items-center justify-between text-xs bg-white p-2 rounded-lg border border-stone-200 gap-2"
                 >
-                  <div className="flex items-center gap-2.5 min-w-0 flex-1">
-                    <ProductImg src={it.img} size={36} alt={it.productName} />
+                  <div className="flex items-center gap-3 min-w-0 flex-1">
+                    <ProductImg src={it.img} size={56} alt={it.productName} />
                     <div className="min-w-0 flex-1">
-                      <span className="font-bold text-stone-900 block truncate">
+                      <span className="font-bold text-stone-900 block leading-snug">
                         {it.productName}
                       </span>
-                      <span className="text-[11px] text-stone-500">
-                        {it.variantLabel} x {it.qty} = <b>৳{it.price * it.qty}</b>
+                      <span className="text-[11px] text-stone-600 block mt-0.5">
+                        {it.variantLabel} • <b>{it.qty} পিস</b> = <b>৳{it.price * it.qty}</b>
                       </span>
                     </div>
                   </div>
@@ -856,6 +856,7 @@ export default function OrdersTab() {
   const [dateFilter, setDateFilter] = useState<"today" | "yesterday" | "all" | "custom">("today");
   const [customDate, setCustomDate] = useState("");
   const [trackingOrder, setTrackingOrder] = useState<Order | null>(null);
+  const [zoomImg, setZoomImg] = useState<{ src: string; title: string } | null>(null);
 
   // Filter orders by date & search
   const filteredOrders = useMemo(() => {
@@ -1106,21 +1107,65 @@ export default function OrdersTab() {
                 )}
               </div>
 
-              {/* Items List with Photo Thumbnail */}
-              <div className="bg-stone-50 p-2.5 rounded-xl border border-stone-200 text-xs space-y-1.5 my-1">
+              {/* Items List with Large Click-to-Zoom Photo Thumbnail */}
+              <div className="bg-stone-50 p-2.5 rounded-xl border border-stone-200 text-xs space-y-2 my-1.5">
                 {o.items.map((it, idx) => {
                   const fallbackProd = db.products.find((p) => p.id === it.productId);
                   const fallbackVar = fallbackProd?.variants.find((v) => v.id === it.variantId);
                   const itemImg = it.img || fallbackVar?.img || fallbackProd?.img;
                   return (
-                    <div key={idx} className="flex justify-between items-center gap-2">
-                      <div className="flex items-center gap-2 min-w-0">
-                        <ProductImg src={itemImg} size={28} alt={it.productName} />
-                        <span className="text-stone-800 truncate">
-                          <b>{it.productName}</b> <span className="text-stone-500">[{it.variantLabel}]</span> x{it.qty}
-                        </span>
+                    <div
+                      key={idx}
+                      className="flex justify-between items-center gap-3 bg-white p-2 rounded-xl border border-stone-200/80 shadow-2xs"
+                    >
+                      <div className="flex items-center gap-3 min-w-0 flex-1">
+                        {itemImg ? (
+                          <button
+                            type="button"
+                            onClick={() =>
+                              setZoomImg({
+                                src: itemImg,
+                                title: `${it.productName} (${it.variantLabel})`,
+                              })
+                            }
+                            aria-label={`${it.productName} এর ছবি বড় করে দেখুন`}
+                            title="ছবি বড় করে দেখতে চাপুন"
+                            className="relative shrink-0 rounded-xl overflow-hidden border-2 border-stone-200 hover:border-amber-500 transition-all cursor-pointer focus:outline-none focus:ring-2 focus:ring-amber-600"
+                          >
+                            <ProductImg src={itemImg} size={72} alt={it.productName} />
+                            <span className="absolute bottom-1 right-1 bg-stone-900/75 text-white rounded px-1 py-0.5 text-[9px] font-bold leading-none">
+                              🔍
+                            </span>
+                          </button>
+                        ) : (
+                          <div className="shrink-0">
+                            <ProductImg src={itemImg} size={72} alt={it.productName} />
+                          </div>
+                        )}
+                        <div className="min-w-0 flex-1">
+                          <div className="font-black text-stone-900 text-xs sm:text-sm leading-snug">
+                            {it.productName}
+                          </div>
+                          <div className="mt-1 flex flex-wrap items-center gap-1.5">
+                            <span className="bg-amber-50 text-amber-900 border border-amber-200/80 px-2 py-0.5 rounded-md text-[11px] font-bold">
+                              {it.variantLabel}
+                            </span>
+                            <span className="bg-stone-100 text-stone-800 px-2 py-0.5 rounded-md text-[11px] font-black">
+                              {it.qty} পিস
+                            </span>
+                          </div>
+                        </div>
                       </div>
-                      <span className="font-bold text-stone-700 shrink-0">@৳{it.price}</span>
+                      <div className="text-right shrink-0">
+                        <div className="font-black text-amber-950 text-sm">
+                          ৳{it.price * it.qty}
+                        </div>
+                        {it.qty > 1 && (
+                          <div className="text-[10px] text-stone-500 font-semibold">
+                            @৳{it.price}
+                          </div>
+                        )}
+                      </div>
                     </div>
                   );
                 })}
@@ -1227,6 +1272,24 @@ export default function OrdersTab() {
             <Btn small color="gray" onClick={() => setTrackingOrder(null)}>
               বন্ধ করুন
             </Btn>
+          </div>
+        </Modal>
+      )}
+
+      {/* Order Bag Image Zoom Lightbox Modal */}
+      {zoomImg && (
+        <Modal title={zoomImg.title} onClose={() => setZoomImg(null)}>
+          <div className="flex flex-col items-center p-2">
+            <img
+              src={zoomImg.src}
+              alt={zoomImg.title}
+              className="max-h-[65vh] w-auto max-w-full rounded-2xl object-contain border border-stone-200 shadow-lg bg-white"
+            />
+            <div className="mt-4 text-center">
+              <Btn small color="gray" onClick={() => setZoomImg(null)}>
+                বন্ধ করুন
+              </Btn>
+            </div>
           </div>
         </Modal>
       )}
