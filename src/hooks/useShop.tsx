@@ -60,13 +60,21 @@ function loadLocal(): LocalStoreState {
 }
 
 function normalize(d: any): ShopData {
+  const settings = d?.settings ? { ...d.settings } : {};
+  if (settings.ship?.outside?.fee === 130 && !settings.shipMigrated140) {
+    settings.ship = {
+      ...settings.ship,
+      outside: { ...settings.ship.outside, fee: 140 },
+    };
+    settings.shipMigrated140 = true;
+  }
   return {
     products: Array.isArray(d?.products) ? d.products : [],
     orders: Array.isArray(d?.orders) ? d.orders : [],
     moves: Array.isArray(d?.moves) ? d.moves : [],
     ads: Array.isArray(d?.ads) ? d.ads : [],
     notifs: Array.isArray(d?.notifs) ? d.notifs : [],
-    settings: d?.settings || {},
+    settings,
     salesDay: d?.salesDay ?? null,
     salesDays: Array.isArray(d?.salesDays) ? d.salesDays : [],
     monthAds: Array.isArray(d?.monthAds) ? d.monthAds : [],

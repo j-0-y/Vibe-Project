@@ -145,10 +145,10 @@ export function getInitialSeedData(): ShopData {
           },
         ],
         total: 1650,
-        cod: 1780, // 1650 + 130 delivery
+        cod: 1790, // 1650 + 140 delivery
         zone: "outside",
         dcost: 115,
-        dcharge: 130,
+        dcharge: 140,
         steadfastId: "CID-94812",
         trackingCode: "SF-883921",
         liveStatus: "in_transit",
@@ -177,7 +177,7 @@ export function getInitialSeedData(): ShopData {
       ship: {
         inside: { cost: 80, fee: 80 },
         sub: { cost: 100, fee: 100 },
-        outside: { cost: 115, fee: 130 },
+        outside: { cost: 115, fee: 140 },
       },
     },
     salesDay: { start: Date.now() - 3600000 * 12 },

@@ -17,6 +17,8 @@ import {
   guessZone,
   zoneName,
   DEFAULT_SHIP,
+  getZoneDeliveryFee,
+  calculateOrderCod,
   toEnDigits,
   parseCustomerBlock,
   isActive,
@@ -82,7 +84,7 @@ function QuickReply() {
     const avail = (p.variants || []).some((v) => v.qty > 0);
     return `${avail ? `জী আপু, আমাদের ${p.name} ✅ স্টকে এভেইলেবল আছে!` : `দুঃখিত আপু, ${p.name} এখন স্টক আউট ❌`}\n${lines.join(
       "\n"
-    )}\nদাম: ৳${p.sell}\nডেলিভারি চার্জ: ঢাকার ভেতর ৳৮০, ঢাকার বাইরে ৳১৩০\n\nঅর্ডার করতে আপনার নাম, সম্পূর্ণ ঠিকানা ও মোবাইল নম্বর দিন 📩`;
+    )}\nদাম: ৳${p.sell}\nডেলিভারি চার্জ: ঢাকার ভেতর ৳${getZoneDeliveryFee(db.settings, "inside")}, ঢাকার বাইরে ৳${getZoneDeliveryFee(db.settings, "outside")}\n\nঅর্ডার করতে আপনার নাম, সম্পূর্ণ ঠিকানা ও মোবাইল নম্বর দিন 📩`;
   };
 
   const copyReply = async (t: string) => {
@@ -144,7 +146,9 @@ function CreateOrderModal({ onClose }: { onClose: () => void }) {
   const [phone, setPhone] = useState("");
   const [address, setAddress] = useState("");
   const [zone, setZone] = useState<Zone>("outside");
-  const [dcharge, setDcharge] = useState<number>(130);
+  const [dcharge, setDcharge] = useState<number>(() =>
+    getZoneDeliveryFee(db.settings, "outside")
+  );
   const [note, setNote] = useState("");
   const [autoSendSteadfast, setAutoSendSteadfast] = useState(true);
   const [busy, setBusy] = useState(false);
@@ -188,18 +192,13 @@ function CreateOrderModal({ onClose }: { onClose: () => void }) {
     if (parsed.address) setAddress(parsed.address);
     if (parsed.zone) {
       setZone(parsed.zone);
-      const zKey = parsed.zone as "inside" | "sub" | "outside";
-      const fee =
-        db.settings?.ship?.[zKey]?.fee ?? DEFAULT_SHIP[zKey]?.fee ?? 130;
-      setDcharge(fee);
+      setDcharge(getZoneDeliveryFee(db.settings, parsed.zone as Zone));
     }
   };
 
   const handleZoneChange = (z: Zone) => {
     setZone(z);
-    const zKey = z as "inside" | "sub" | "outside";
-    const fee = db.settings?.ship?.[zKey]?.fee ?? DEFAULT_SHIP[zKey]?.fee ?? 130;
-    setDcharge(fee);
+    setDcharge(getZoneDeliveryFee(db.settings, z));
   };
 
   const addItem = () => {
@@ -248,7 +247,7 @@ function CreateOrderModal({ onClose }: { onClose: () => void }) {
 
   const itemsTotal = selectedItems.reduce((acc, it) => acc + it.price * it.qty, 0);
   const [customCod, setCustomCod] = useState<string>("");
-  const totalCod = customCod !== "" ? +customCod : itemsTotal + dcharge;
+  const totalCod = calculateOrderCod(itemsTotal, dcharge, customCod);
 
   const runFraudCheck = async () => {
     if (!phone) {
@@ -425,9 +424,15 @@ function CreateOrderModal({ onClose }: { onClose: () => void }) {
               value={zone}
               onChange={(e) => handleZoneChange(e.target.value as Zone)}
             >
-              <option value="inside">ঢাকার ভেতর (৳৮০)</option>
-              <option value="sub">সাব-ঢাকা (৳১০০)</option>
-              <option value="outside">ঢাকার বাইরে (৳১৩০)</option>
+              <option value="inside">
+                ঢাকার ভেতর (৳{getZoneDeliveryFee(db.settings, "inside")})
+              </option>
+              <option value="sub">
+                সাব-ঢাকা (৳{getZoneDeliveryFee(db.settings, "sub")})
+              </option>
+              <option value="outside">
+                ঢাকার বাইরে (৳{getZoneDeliveryFee(db.settings, "outside")})
+              </option>
             </select>
           </Field>
           <Field label="ডেলিভারি চার্জ (৳)">
@@ -651,12 +656,26 @@ function CreateOrderModal({ onClose }: { onClose: () => void }) {
               মোট ক্যাশ কালেকশন (COD): ৳{totalCod}
             </div>
           </div>
-          <div className="w-28 text-right">
-            <label className="text-[10px] font-bold text-stone-600 block mb-0.5">ম্যানুয়াল COD?</label>
+          <div className="w-32 text-right">
+            <div className="flex items-center justify-end gap-1 mb-0.5">
+              <label htmlFor="manual-cod-input" className="text-[10px] font-bold text-stone-600">
+                ম্যানুয়াল COD?
+              </label>
+              {customCod !== "" && (
+                <button
+                  type="button"
+                  onClick={() => setCustomCod("")}
+                  className="text-[10px] font-bold text-amber-800 hover:underline cursor-pointer"
+                >
+                  অটো
+                </button>
+              )}
+            </div>
             <input
+              id="manual-cod-input"
               type="number"
               placeholder="যেমন: 1450"
-              className="w-full text-xs rounded-lg border border-stone-300 bg-white p-1 text-center font-bold focus:outline-none"
+              className="w-full text-xs rounded-lg border border-stone-300 bg-white p-1.5 text-center font-bold focus:outline-none focus:border-amber-600"
               value={customCod}
               onChange={(e) => setCustomCod(e.target.value)}
             />

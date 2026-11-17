@@ -34,7 +34,7 @@ export default function SetupTab() {
   const [insideCost, setInsideCost] = useState((db.settings?.ship?.inside?.cost ?? 80).toString());
   const [subFee, setSubFee] = useState((db.settings?.ship?.sub?.fee ?? 100).toString());
   const [subCost, setSubCost] = useState((db.settings?.ship?.sub?.cost ?? 100).toString());
-  const [outsideFee, setOutsideFee] = useState((db.settings?.ship?.outside?.fee ?? 130).toString());
+  const [outsideFee, setOutsideFee] = useState((db.settings?.ship?.outside?.fee ?? 140).toString());
   const [outsideCost, setOutsideCost] = useState((db.settings?.ship?.outside?.cost ?? 115).toString());
 
   // Supabase Credentials (permanently loaded)
@@ -69,7 +69,7 @@ export default function SetupTab() {
         setSubCost((db.settings.ship.sub.cost ?? 100).toString());
       }
       if (db.settings.ship?.outside) {
-        setOutsideFee((db.settings.ship.outside.fee ?? 130).toString());
+        setOutsideFee((db.settings.ship.outside.fee ?? 140).toString());
         setOutsideCost((db.settings.ship.outside.cost ?? 115).toString());
       }
       if (db.settings.steadfast?.key) setSfKey(db.settings.steadfast.key);
@@ -139,7 +139,7 @@ export default function SetupTab() {
           ship: {
             inside: { cost: +insideCost || 80, fee: +insideFee || 80 },
             sub: { cost: +subCost || 100, fee: +subFee || 100 },
-            outside: { cost: +outsideCost || 115, fee: +outsideFee || 130 },
+            outside: { cost: +outsideCost || 115, fee: +outsideFee || 140 },
           },
         }),
       });
@@ -157,8 +157,9 @@ export default function SetupTab() {
       d.settings.ship = {
         inside: { cost: +insideCost || 80, fee: +insideFee || 80 },
         sub: { cost: +subCost || 100, fee: +subFee || 100 },
-        outside: { cost: +outsideCost || 115, fee: +outsideFee || 130 },
+        outside: { cost: +outsideCost || 115, fee: +outsideFee || 140 },
       };
+      d.settings.shipMigrated140 = true;
     });
 
     resetSupabaseClient();

@@ -7,6 +7,9 @@ import {
   guessZone,
   parseCustomerBlock,
   codOf,
+  DEFAULT_SHIP,
+  getZoneDeliveryFee,
+  calculateOrderCod,
 } from "./utils.ts";
 import { restoreInto, deductInto } from "./stock.ts";
 import type { ShopData, Product } from "./types.ts";
@@ -123,4 +126,24 @@ test("stock deductInto and restoreInto correctly alters inventory quantities", (
   ]);
 
   assert.equal(initialShop.products[0].variants[0].qty, 9);
+});
+
+test("delivery fees default to inside 80, sub 100, outside 140", () => {
+  assert.equal(DEFAULT_SHIP.inside.fee, 80);
+  assert.equal(DEFAULT_SHIP.sub.fee, 100);
+  assert.equal(DEFAULT_SHIP.outside.fee, 140);
+
+  assert.equal(getZoneDeliveryFee(undefined, "inside"), 80);
+  assert.equal(getZoneDeliveryFee(undefined, "sub"), 100);
+  assert.equal(getZoneDeliveryFee(undefined, "outside"), 140);
+});
+
+test("calculateOrderCod supports automatic delivery total and manual COD override", () => {
+  // Auto calculation with 140 outside Dhaka delivery
+  assert.equal(calculateOrderCod(1200, 140, ""), 1340);
+  assert.equal(calculateOrderCod(1200, 140, undefined), 1340);
+  // Manual COD increase or decrease
+  assert.equal(calculateOrderCod(1200, 140, "1500"), 1500);
+  assert.equal(calculateOrderCod(1200, 140, "1000"), 1000);
+  assert.equal(calculateOrderCod(1200, 140, "0"), 0);
 });

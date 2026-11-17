@@ -58,8 +58,27 @@ export function zoneName(z?: string): string {
 export const DEFAULT_SHIP: Record<Zone, ShipZone> = {
   inside: { cost: 80, fee: 80 },
   sub: { cost: 100, fee: 100 },
-  outside: { cost: 115, fee: 130 },
+  outside: { cost: 115, fee: 140 },
 };
+
+export function getZoneDeliveryFee(
+  settings: { ship?: Partial<Record<Zone, ShipZone>> } | undefined,
+  zone: Zone
+): number {
+  return settings?.ship?.[zone]?.fee ?? DEFAULT_SHIP[zone]?.fee ?? 140;
+}
+
+export function calculateOrderCod(
+  itemsTotal: number,
+  deliveryCharge: number,
+  manualCod: string | number | null | undefined
+): number {
+  if (manualCod !== undefined && manualCod !== null && String(manualCod).trim() !== "") {
+    const parsed = Number(manualCod);
+    return Number.isFinite(parsed) ? parsed : itemsTotal + deliveryCharge;
+  }
+  return itemsTotal + deliveryCharge;
+}
 
 const OUTSIDE_EX = ["bandarban", "বান্দরবান", "coxsbazar", "cox's bazar", "cox bazar", "কক্সবাজার"];
 

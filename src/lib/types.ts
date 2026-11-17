@@ -133,6 +133,7 @@ export interface Settings {
     sub: ShipZone;
     outside: ShipZone;
   };
+  shipMigrated140?: boolean;
   steadfast?: {
     key: string;
     secret: string;
