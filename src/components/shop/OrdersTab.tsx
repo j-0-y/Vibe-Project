@@ -1,10 +1,11 @@
 "use client";
-import React, { useMemo, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import { useShop } from "@/hooks/useShop";
 import { useAuth } from "@/hooks/useAuth";
 import {
   createParcel,
   returnParcel,
+  fetchParcelStatus,
   steadLastError,
   fraudCheck,
   type FraudReport,
@@ -19,6 +20,7 @@ import {
   DEFAULT_SHIP,
   getZoneDeliveryFee,
   calculateOrderCod,
+  mapSteadfastDeliveryStatus,
   toEnDigits,
   parseCustomerBlock,
   isActive,
@@ -875,7 +877,119 @@ export default function OrdersTab() {
   const [dateFilter, setDateFilter] = useState<"today" | "yesterday" | "all" | "custom">("today");
   const [customDate, setCustomDate] = useState("");
   const [trackingOrder, setTrackingOrder] = useState<Order | null>(null);
+  const [trackingLoading, setTrackingLoading] = useState(false);
+  const [trackingError, setTrackingError] = useState("");
+  const [syncingSteadfast, setSyncingSteadfast] = useState(false);
+  const autoSyncedRef = useRef(false);
   const [zoomImg, setZoomImg] = useState<{ src: string; title: string } | null>(null);
+
+  const syncSteadfastOrders = async (showFeedback = false) => {
+    const candidates = (db.orders || []).filter(
+      (o) =>
+        o.steadfastId &&
+        (o.status === "Shipped" ||
+          o.status === "Pending" ||
+          o.status === "Packed" ||
+          o.liveStatus === "delivered_approval_pending" ||
+          o.liveStatus === "partial_delivered_approval_pending" ||
+          o.liveStatus === "cancelled_approval_pending")
+    );
+
+    if (candidates.length === 0) {
+      if (showFeedback) {
+        alert("সিঙ্ক করার মতো কোনো পেন্ডিং/চলমান স্টেডফাস্ট অর্ডার নেই।");
+      }
+      return;
+    }
+
+    setSyncingSteadfast(true);
+    const updates: Array<{
+      id: string;
+      liveStatus: string;
+      orderStatus: OrderStatus;
+    }> = [];
+
+    try {
+      for (const ord of candidates.slice(0, 20)) {
+        const res = await fetchParcelStatus(ord.steadfastId, ord.id);
+        if (!res || res.simulated) continue;
+        const mapped = mapSteadfastDeliveryStatus(res.deliveryStatus);
+        if (ord.liveStatus !== res.deliveryStatus || ord.status !== mapped.orderStatus) {
+          updates.push({
+            id: ord.id,
+            liveStatus: res.deliveryStatus,
+            orderStatus: mapped.orderStatus,
+          });
+        }
+      }
+
+      if (updates.length > 0) {
+        await mutateAndSync((d) => {
+          for (const up of updates) {
+            const target = d.orders.find((x) => x.id === up.id);
+            if (target) {
+              target.liveStatus = up.liveStatus;
+              target.status = up.orderStatus;
+              target.statusTs = Date.now();
+            }
+          }
+        });
+      }
+
+      if (showFeedback) {
+        alert(
+          updates.length > 0
+            ? `✅ স্টেডফাস্ট থেকে ${updates.length}টি অর্ডারের স্ট্যাটাস আপডেট করা হয়েছে!`
+            : "ℹ️ সবগুলো স্টেডফাস্ট অর্ডারের স্ট্যাটাস ইতিমধ্যে আপডেট আছে।"
+        );
+      }
+    } finally {
+      setSyncingSteadfast(false);
+    }
+  };
+
+  useEffect(() => {
+    if (autoSyncedRef.current) return;
+    if ((db.orders || []).some((o) => o.steadfastId && o.status === "Shipped")) {
+      autoSyncedRef.current = true;
+      void syncSteadfastOrders(false);
+    }
+  }, [db.orders]);
+
+  const openLiveTracking = async (o: Order) => {
+    setTrackingOrder(o);
+    setTrackingError("");
+    setTrackingLoading(true);
+    try {
+      const res = await fetchParcelStatus(o.steadfastId, o.id);
+      if (!res) {
+        setTrackingError(steadLastError() || "স্টেডফাস্ট থেকে লাইভ স্ট্যাটাস পাওয়া যায়নি");
+        return;
+      }
+      const mapped = mapSteadfastDeliveryStatus(res.deliveryStatus);
+      const updatedOrder: Order = {
+        ...o,
+        liveStatus: res.deliveryStatus,
+        status: res.simulated ? o.status : mapped.orderStatus,
+      };
+      setTrackingOrder(updatedOrder);
+
+      if (!res.simulated && (o.liveStatus !== res.deliveryStatus || o.status !== mapped.orderStatus)) {
+        await mutateAndSync((d) => {
+          const target = d.orders.find((x) => x.id === o.id);
+          if (target) {
+            target.liveStatus = res.deliveryStatus;
+            target.status = mapped.orderStatus;
+            target.statusTs = Date.now();
+          }
+        });
+      }
+    } catch {
+      setTrackingError("স্টেডফাস্ট সার্ভারে সংযোগ করা যায়নি");
+    } finally {
+      setTrackingLoading(false);
+    }
+  };
 
   // Filter orders by date & search
   const filteredOrders = useMemo(() => {
@@ -1013,6 +1127,14 @@ export default function OrdersTab() {
           🧾 ফেসবুক অর্ডারসমূহ
         </h2>
         <div className="flex items-center gap-1.5">
+          <Btn
+            small
+            color="gray"
+            onClick={() => void syncSteadfastOrders(true)}
+            disabled={syncingSteadfast}
+          >
+            {syncingSteadfast ? "🔄 চেক হচ্ছে..." : "🔄 স্ট্যাটাস সিঙ্ক"}
+          </Btn>
           <Btn small color="amber" onClick={() => setIsCreating(true)}>
             + নতুন অর্ডার
           </Btn>
@@ -1191,12 +1313,29 @@ export default function OrdersTab() {
               </div>
 
               {/* Steadfast CID / Status line */}
-              <div className="mt-2 flex items-center justify-between text-xs bg-stone-100/70 p-2 rounded-xl">
-                <div>
+              <div className="mt-2 flex flex-wrap items-center justify-between gap-2 text-xs bg-stone-100/70 p-2 rounded-xl">
+                <div className="flex flex-wrap items-center gap-1.5">
                   {o.steadfastId ? (
-                    <span className="font-bold text-purple-900">
-                      CID: <code className="bg-white px-1.5 py-0.5 rounded border border-purple-200">{o.steadfastId}</code>
-                    </span>
+                    <>
+                      <span className="font-bold text-purple-900">
+                        CID: <code className="bg-white px-1.5 py-0.5 rounded border border-purple-200">{o.steadfastId}</code>
+                      </span>
+                      {o.liveStatus && (() => {
+                        const mapped = mapSteadfastDeliveryStatus(o.liveStatus);
+                        const pillCls = mapped.isFinalBalanceAdded
+                          ? "bg-emerald-100 text-emerald-800 border-emerald-200"
+                          : mapped.isDeliveredPendingApproval
+                          ? "bg-amber-100 text-amber-900 border-amber-300"
+                          : mapped.isCancelled
+                          ? "bg-red-100 text-red-800 border-red-200"
+                          : "bg-blue-50 text-blue-800 border-blue-200";
+                        return (
+                          <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full border ${pillCls}`}>
+                            {mapped.labelBn}
+                          </span>
+                        );
+                      })()}
+                    </>
                   ) : (
                     <span className="text-stone-500">স্টেডফাস্ট পার্সেল তৈরি হয়নি</span>
                   )}
@@ -1227,7 +1366,7 @@ export default function OrdersTab() {
                     </Btn>
                   )}
                   {o.steadfastId && (
-                    <Btn small color="blue" onClick={() => setTrackingOrder(o)}>
+                    <Btn small color="blue" onClick={() => void openLiveTracking(o)}>
                       🔍 Live Track
                     </Btn>
                   )}
@@ -1256,44 +1395,137 @@ export default function OrdersTab() {
       {/* Create Order Modal */}
       {isCreating && <CreateOrderModal onClose={() => setIsCreating(false)} />}
 
-      {/* Live Tracking Modal */}
-      {trackingOrder && (
-        <Modal
-          title={`🚚 স্টেডফাস্ট লাইভ ট্র্যাকিং (${trackingOrder.id})`}
-          onClose={() => setTrackingOrder(null)}
-        >
-          <div className="space-y-3">
-            <div className="bg-stone-50 p-3 rounded-xl border border-stone-200 text-xs">
-              <div><b>কাস্টমার:</b> {trackingOrder.customer} ({trackingOrder.phone})</div>
-              <div><b>ঠিকানা:</b> {trackingOrder.address}</div>
-              <div><b>Consignment ID:</b> {trackingOrder.steadfastId}</div>
-              <div><b>ট্র্যাকিং কোড:</b> {trackingOrder.trackingCode || "N/A"}</div>
-            </div>
+      {/* Live Tracking Modal (Real Steadfast API Status) */}
+      {trackingOrder && (() => {
+        const mapped = mapSteadfastDeliveryStatus(trackingOrder.liveStatus);
+        const step1Done = mapped.step >= 1;
+        const step2Done = mapped.step >= 2;
+        const step3Done = mapped.step >= 3;
 
-            <div className="border-l-2 border-amber-700 pl-4 space-y-3 py-1">
-              <div className="relative">
-                <div className="absolute -left-[21px] top-1 w-3 h-3 rounded-full bg-amber-700"></div>
-                <div className="text-xs font-bold text-stone-900">পার্সেল পিকআপ সম্পন্ন হয়েছে</div>
-                <div className="text-[10px] text-stone-500">স্টেডফাস্ট হাব কর্তৃক রিসিভড</div>
+        return (
+          <Modal
+            title={`🚚 স্টেডফাস্ট লাইভ ট্র্যাকিং (${trackingOrder.id})`}
+            onClose={() => setTrackingOrder(null)}
+          >
+            <div className="space-y-3">
+              <div className="bg-stone-50 p-3 rounded-xl border border-stone-200 text-xs space-y-0.5">
+                <div><b>কাস্টমার:</b> {trackingOrder.customer} ({trackingOrder.phone})</div>
+                <div><b>ঠিকানা:</b> {trackingOrder.address}</div>
+                <div><b>Consignment ID:</b> {trackingOrder.steadfastId}</div>
+                <div><b>ট্র্যাকিং কোড:</b> {trackingOrder.trackingCode || "N/A"}</div>
               </div>
-              <div className="relative">
-                <div className="absolute -left-[21px] top-1 w-3 h-3 rounded-full bg-blue-600"></div>
-                <div className="text-xs font-bold text-stone-900">গন্তব্যের হাবে ইন-ট্রানজিট</div>
-                <div className="text-[10px] text-stone-500">ডেলিভারি রাইডারের নিকট প্রেরিত</div>
+
+              {trackingLoading ? (
+                <div className="p-3 rounded-xl bg-blue-50 border border-blue-200 text-xs font-bold text-blue-900 text-center">
+                  🔄 স্টেডফাস্ট সার্ভার থেকে লাইভ স্ট্যাটাস আনা হচ্ছে...
+                </div>
+              ) : trackingError ? (
+                <div className="p-3 rounded-xl bg-red-50 border border-red-200 text-xs font-bold text-red-800">
+                  ⚠️ {trackingError}
+                </div>
+              ) : (
+                <div
+                  className={`p-3 rounded-xl border text-xs ${
+                    mapped.isFinalBalanceAdded
+                      ? "bg-emerald-50 border-emerald-300 text-emerald-950"
+                      : mapped.isDeliveredPendingApproval
+                      ? "bg-amber-50 border-amber-300 text-amber-950"
+                      : mapped.isCancelled
+                      ? "bg-red-50 border-red-300 text-red-950"
+                      : "bg-blue-50 border-blue-200 text-blue-950"
+                  }`}
+                >
+                  <div className="font-black text-sm">{mapped.labelBn}</div>
+                  <div className="mt-1 text-xs opacity-90">{mapped.detailBn}</div>
+                  <div className="mt-1.5 text-[10px] font-mono opacity-75">
+                    Steadfast API Status: {mapped.raw}
+                  </div>
+                </div>
+              )}
+
+              <div className="border-l-2 border-amber-700 pl-4 space-y-3 py-1">
+                <div className="relative">
+                  <div
+                    className={`absolute -left-[21px] top-1 w-3 h-3 rounded-full ${
+                      step1Done ? "bg-emerald-600" : "bg-stone-300"
+                    }`}
+                  ></div>
+                  <div className="text-xs font-bold text-stone-900">পার্সেল বুকিং ও পিকআপ</div>
+                  <div className="text-[10px] text-stone-500">
+                    {mapped.raw === "in_review" ? "স্টেডফাস্ট রিভিউ/পিকআপের অপেক্ষায়" : "স্টেডফাস্ট হাব কর্তৃক রিসিভড"}
+                  </div>
+                </div>
+                <div className="relative">
+                  <div
+                    className={`absolute -left-[21px] top-1 w-3 h-3 rounded-full ${
+                      step3Done ? "bg-emerald-600" : step2Done ? "bg-blue-600" : "bg-stone-300"
+                    }`}
+                  ></div>
+                  <div className={`text-xs font-bold ${step2Done ? "text-stone-900" : "text-stone-400"}`}>
+                    গন্তব্যের হাবে ইন-ট্রানজিট
+                  </div>
+                  <div className="text-[10px] text-stone-500">
+                    {step3Done
+                      ? "রাইডার ডেলিভারি প্রসেস সম্পন্ন হয়েছে"
+                      : mapped.raw === "hold"
+                      ? "হাবে হোল্ড অবস্থায় আছে"
+                      : "ডেলিভারি রাইডারের নিকট প্রেরিত"}
+                  </div>
+                </div>
+                <div className="relative">
+                  <div
+                    className={`absolute -left-[21px] top-1 w-3 h-3 rounded-full ${
+                      mapped.isCancelled
+                        ? "bg-red-600"
+                        : mapped.isFinalBalanceAdded
+                        ? "bg-emerald-600"
+                        : mapped.isDeliveredPendingApproval
+                        ? "bg-amber-500"
+                        : "bg-stone-300"
+                    }`}
+                  ></div>
+                  <div
+                    className={`text-xs font-bold ${
+                      step3Done ? "text-stone-900" : "text-stone-500"
+                    }`}
+                  >
+                    {mapped.isCancelled
+                      ? "পার্সেল ক্যানসেল / রিটার্ন"
+                      : mapped.isFinalBalanceAdded
+                      ? "ডেলিভারড ও ব্যালেন্সে টাকা যুক্ত ✅"
+                      : mapped.isDeliveredPendingApproval
+                      ? "ডেলিভারড — Approval Pending ⏳"
+                      : "ডেলিভারি ও ক্যাশ কালেকশন"}
+                  </div>
+                  <div className="text-[10px] text-stone-500">
+                    {mapped.isCancelled
+                      ? mapped.detailBn
+                      : mapped.isFinalBalanceAdded
+                      ? "স্টেডফাস্ট 'Delivered' ট্যাবে আছে ও ব্যালেন্সে যোগ হয়েছে"
+                      : mapped.isDeliveredPendingApproval
+                      ? "কাস্টমার পেয়েছেন; স্টেডফাস্ট 'Approval pending' অনুমোদন করলেই ব্যালেন্সে টাকা যোগ হবে"
+                      : "প্রক্রিয়াধীন"}
+                  </div>
+                </div>
               </div>
-              <div className="relative">
-                <div className="absolute -left-[21px] top-1 w-3 h-3 rounded-full bg-stone-300"></div>
-                <div className="text-xs font-bold text-stone-500">ডেলিভারি ও ক্যাশ কালেকশন</div>
-                <div className="text-[10px] text-stone-400">প্রক্রিয়াধীন</div>
+
+              <div className="flex items-center gap-2 pt-1">
+                <Btn
+                  small
+                  color="blue"
+                  onClick={() => void openLiveTracking(trackingOrder)}
+                  disabled={trackingLoading}
+                >
+                  {trackingLoading ? "লোড হচ্ছে..." : "🔄 রিফ্রেশ"}
+                </Btn>
+                <Btn small color="gray" onClick={() => setTrackingOrder(null)}>
+                  বন্ধ করুন
+                </Btn>
               </div>
             </div>
-
-            <Btn small color="gray" onClick={() => setTrackingOrder(null)}>
-              বন্ধ করুন
-            </Btn>
-          </div>
-        </Modal>
-      )}
+          </Modal>
+        );
+      })()}
 
       {/* Order Bag Image Zoom Lightbox Modal */}
       {zoomImg && (

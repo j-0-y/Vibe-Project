@@ -180,9 +180,10 @@ function mockSteadfastResponse(endpoint: string, method: string, body?: any) {
     };
   }
 
-  if (endpoint.includes("status_by_cid") || endpoint.includes("status_by_trackingcode")) {
+  if (endpoint.includes("status_by_cid") || endpoint.includes("status_by_trackingcode") || endpoint.includes("status_by_invoice")) {
     return {
       status: 200,
+      simulated: true,
       delivery_status: "in_transit",
       history: [
         { time: "আজ সকাল ১০:৩০", status: "পার্সেল পিকআপ সম্পন্ন হয়েছে" },
@@ -247,6 +248,31 @@ export async function bulkParcels(
 export async function returnParcel(cid: string): Promise<boolean> {
   const j = await steadApi("return_request", "POST", { consignment_id: cid });
   return Boolean(j && (j.status === 200 || j.status === "success"));
+}
+
+/**
+ * Fetch live delivery status from Steadfast by Consignment ID (or invoice fallback)
+ */
+export async function fetchParcelStatus(
+  cid?: string,
+  invoice?: string
+): Promise<{ deliveryStatus: string; simulated: boolean; raw: any } | null> {
+  let j: any = null;
+  if (cid && !String(cid).startsWith("CID-")) {
+    j = await steadApi(`status_by_cid/${encodeURIComponent(cid)}`, "GET", undefined, true);
+  }
+  if ((!j || !j.delivery_status) && invoice) {
+    j = await steadApi(`status_by_invoice/${encodeURIComponent(invoice)}`, "GET", undefined, true);
+  }
+  if (!j && cid) {
+    j = await steadApi(`status_by_cid/${encodeURIComponent(cid)}`, "GET", undefined, true);
+  }
+  if (!j || !j.delivery_status) return null;
+  return {
+    deliveryStatus: String(j.delivery_status),
+    simulated: Boolean(j.simulated),
+    raw: j,
+  };
 }
 
 function getStoredBdCourierKey(): string {

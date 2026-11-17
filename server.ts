@@ -68,9 +68,10 @@ async function main() {
           message: "পার্সেল সফলভাবে তৈরি হয়েছে (সিমুলেশন)",
         });
       }
-      if (subPath.includes("status_by_cid") || subPath.includes("status_by_trackingcode")) {
+      if (subPath.includes("status_by_cid") || subPath.includes("status_by_trackingcode") || subPath.includes("status_by_invoice")) {
         return res.json({
           status: 200,
+          simulated: true,
           delivery_status: "in_transit",
           history: [
             { time: "আজ সকাল ১০:৩০", status: "পার্সেল পিকআপ সম্পন্ন হয়েছে" },
@@ -89,6 +90,7 @@ async function main() {
         method: req.method,
         headers: {
           "Content-Type": "application/json",
+          Accept: "application/json",
           "Api-Key": key,
           "Secret-Key": secret,
         },

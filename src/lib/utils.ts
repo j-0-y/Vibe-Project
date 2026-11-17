@@ -80,6 +80,146 @@ export function calculateOrderCod(
   return itemsTotal + deliveryCharge;
 }
 
+export interface MappedSteadfastStatus {
+  raw: string;
+  orderStatus: "Pending" | "Packed" | "Shipped" | "Delivered" | "Cancelled" | "Returned";
+  labelBn: string;
+  detailBn: string;
+  step: 1 | 2 | 3;
+  isFinalBalanceAdded: boolean;
+  isDeliveredPendingApproval: boolean;
+  isCancelled: boolean;
+  isPartial: boolean;
+}
+
+export function mapSteadfastDeliveryStatus(rawStatus?: string): MappedSteadfastStatus {
+  const s = (rawStatus || "in_transit").trim().toLowerCase();
+
+  if (s === "delivered") {
+    return {
+      raw: s,
+      orderStatus: "Delivered",
+      labelBn: "ডেলিভারড (ব্যালেন্স যুক্ত ✅)",
+      detailBn: "পার্সেল সফলভাবে ডেলিভারড হয়েছে এবং আপনার স্টেডফাস্ট ব্যালেন্সে টাকা যুক্ত হয়েছে।",
+      step: 3,
+      isFinalBalanceAdded: true,
+      isDeliveredPendingApproval: false,
+      isCancelled: false,
+      isPartial: false,
+    };
+  }
+
+  if (s === "delivered_approval_pending") {
+    return {
+      raw: s,
+      orderStatus: "Delivered",
+      labelBn: "ডেলিভারড (Approval Pending ⏳)",
+      detailBn: "কাস্টমার পার্সেলটি রিসিভ করেছেন (Delivered)। বর্তমানে স্টেডফাস্টের Approval Pending-এ আছে — অনুমোদন হলেই ব্যালেন্সে টাকা যোগ হবে।",
+      step: 3,
+      isFinalBalanceAdded: false,
+      isDeliveredPendingApproval: true,
+      isCancelled: false,
+      isPartial: false,
+    };
+  }
+
+  if (s === "partial_delivered") {
+    return {
+      raw: s,
+      orderStatus: "Delivered",
+      labelBn: "আংশিক ডেলিভারড (ব্যালেন্স যুক্ত ⚠️)",
+      detailBn: "আংশিক ডেলিভারি সম্পন্ন হয়েছে এবং ব্যালেন্স আপডেট হয়েছে।",
+      step: 3,
+      isFinalBalanceAdded: true,
+      isDeliveredPendingApproval: false,
+      isCancelled: false,
+      isPartial: true,
+    };
+  }
+
+  if (s === "partial_delivered_approval_pending") {
+    return {
+      raw: s,
+      orderStatus: "Delivered",
+      labelBn: "আংশিক ডেলিভারি (Approval Pending ⏳)",
+      detailBn: "আংশিক ডেলিভারি হয়েছে — বর্তমানে স্টেডফাস্টে Approval Pending রয়েছে।",
+      step: 3,
+      isFinalBalanceAdded: false,
+      isDeliveredPendingApproval: true,
+      isCancelled: false,
+      isPartial: true,
+    };
+  }
+
+  if (s === "cancelled") {
+    return {
+      raw: s,
+      orderStatus: "Cancelled",
+      labelBn: "ক্যানসেল হয়েছে ❌",
+      detailBn: "পার্সেলটি ক্যানসেল করা হয়েছে।",
+      step: 3,
+      isFinalBalanceAdded: false,
+      isDeliveredPendingApproval: false,
+      isCancelled: true,
+      isPartial: false,
+    };
+  }
+
+  if (s === "cancelled_approval_pending") {
+    return {
+      raw: s,
+      orderStatus: "Cancelled",
+      labelBn: "ক্যানসেল (Approval Pending ⏳)",
+      detailBn: "পার্সেলটি ক্যানসেল মার্ক করা হয়েছে — স্টেডফাস্টে Approval Pending রয়েছে।",
+      step: 3,
+      isFinalBalanceAdded: false,
+      isDeliveredPendingApproval: false,
+      isCancelled: true,
+      isPartial: false,
+    };
+  }
+
+  if (s === "hold") {
+    return {
+      raw: s,
+      orderStatus: "Shipped",
+      labelBn: "হোল্ডে আছে ⏸️",
+      detailBn: "পার্সেলটি স্টেডফাস্ট হাবে হোল্ড অবস্থায় আছে।",
+      step: 2,
+      isFinalBalanceAdded: false,
+      isDeliveredPendingApproval: false,
+      isCancelled: false,
+      isPartial: false,
+    };
+  }
+
+  if (s === "in_review") {
+    return {
+      raw: s,
+      orderStatus: "Shipped",
+      labelBn: "রিভিউতে আছে (In Review)",
+      detailBn: "পার্সেলটি স্টেডফাস্টের পিকআপ ও রিভিউয়ের অপেক্ষায় আছে।",
+      step: 1,
+      isFinalBalanceAdded: false,
+      isDeliveredPendingApproval: false,
+      isCancelled: false,
+      isPartial: false,
+    };
+  }
+
+  return {
+    raw: s,
+    orderStatus: "Shipped",
+    labelBn: "ইন-ট্রানজিট / ডেলিভারি চলমান 🚚",
+    detailBn: "পার্সেলটি গন্তব্যের হাব বা ডেলিভারি রাইডারের কাছে প্রেরিত হয়েছে।",
+    step: 2,
+    isFinalBalanceAdded: false,
+    isDeliveredPendingApproval: false,
+    isCancelled: false,
+    isPartial: false,
+  };
+}
+
 const OUTSIDE_EX = ["bandarban", "বান্দরবান", "coxsbazar", "cox's bazar", "cox bazar", "কক্সবাজার"];
 
 const SUB_KEYS = [

@@ -10,6 +10,7 @@ import {
   DEFAULT_SHIP,
   getZoneDeliveryFee,
   calculateOrderCod,
+  mapSteadfastDeliveryStatus,
 } from "./utils.ts";
 import { restoreInto, deductInto } from "./stock.ts";
 import type { ShopData, Product } from "./types.ts";
@@ -146,4 +147,26 @@ test("calculateOrderCod supports automatic delivery total and manual COD overrid
   assert.equal(calculateOrderCod(1200, 140, "1500"), 1500);
   assert.equal(calculateOrderCod(1200, 140, "1000"), 1000);
   assert.equal(calculateOrderCod(1200, 140, "0"), 0);
+});
+
+test("mapSteadfastDeliveryStatus maps approval pending, delivered, cancelled, and in-transit accurately", () => {
+  const pendingApproval = mapSteadfastDeliveryStatus("delivered_approval_pending");
+  assert.equal(pendingApproval.orderStatus, "Delivered");
+  assert.equal(pendingApproval.isDeliveredPendingApproval, true);
+  assert.equal(pendingApproval.isFinalBalanceAdded, false);
+  assert.equal(pendingApproval.step, 3);
+
+  const finalDelivered = mapSteadfastDeliveryStatus("delivered");
+  assert.equal(finalDelivered.orderStatus, "Delivered");
+  assert.equal(finalDelivered.isDeliveredPendingApproval, false);
+  assert.equal(finalDelivered.isFinalBalanceAdded, true);
+  assert.equal(finalDelivered.step, 3);
+
+  const cancelled = mapSteadfastDeliveryStatus("cancelled");
+  assert.equal(cancelled.orderStatus, "Cancelled");
+  assert.equal(cancelled.isCancelled, true);
+
+  const inTransit = mapSteadfastDeliveryStatus("pending");
+  assert.equal(inTransit.orderStatus, "Shipped");
+  assert.equal(inTransit.step, 2);
 });
